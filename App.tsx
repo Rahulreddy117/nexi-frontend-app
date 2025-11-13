@@ -12,6 +12,11 @@ import {
   StyleSheet,
   Image,
 } from 'react-native';
+import ChatScreen from './screens/ChatScreen';      
+import InboxScreen from './screens/InboxScreen';  // ← ADD THIS LINE    // ← IMPORT HERE
+
+import SearchBarScreen from './screens/SearchScreen';           // ← NEW
+import UserProfileScreen from './screens/UserProfileScreen';       // ← NEW
 import EncryptedStorage from 'react-native-encrypted-storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { jwtDecode } from 'jwt-decode';
@@ -203,28 +208,30 @@ export default function App() {
   return (
     <ThemeProvider>
       <NavigationContainer>
-        <Stack.Navigator
-          initialRouteName={initialRouteName}
-          screenOptions={{ headerShown: false }}
-        >
-          <Stack.Screen name="Login" component={LoginScreen} />
-          <Stack.Screen name="ProfileSetup">
-            {() => <ProfileSetupScreen {...(initialRouteParams as any)} />}
-          </Stack.Screen>
+        <Stack.Navigator initialRouteName={initialRouteName} screenOptions={{ headerShown: false }}>
+  <Stack.Screen name="Login" component={LoginScreen} />
+  <Stack.Screen name="ProfileSetup">
+    {() => <ProfileSetupScreen {...(initialRouteParams as any)} />}
+  </Stack.Screen>
 
-          {/* Home → Tabs */}
-          <Stack.Screen name="Home">
-            {() => (
-              <BottomTabsNavigator
-                profilePicUrl={initialRouteParams?.profilePicUrl}
-                homeParams={initialRouteParams}
-              />
-            )}
-          </Stack.Screen>
+  <Stack.Screen name="Home">
+    {() => (
+      <BottomTabsNavigator
+        profilePicUrl={initialRouteParams?.profilePicUrl}
+        homeParams={initialRouteParams}
+      />
+    )}
+  </Stack.Screen>
+  <Stack.Screen name="UserProfile" component={UserProfileScreen} />
+  <Stack.Screen name="Chat" component={ChatScreen} />
+  <Stack.Screen name="Inbox" component={InboxScreen} />
 
-          <Stack.Screen name="Settings" component={SettingsScreen} />
-        </Stack.Navigator>
+  <Stack.Screen name="Settings" component={SettingsScreen} />
+  
+  {/* ADD THESE TWO */}
+  <Stack.Screen name="SearchBar" component={SearchBarScreen} />
+</Stack.Navigator>
       </NavigationContainer>
     </ThemeProvider>
   );
-}
+}    

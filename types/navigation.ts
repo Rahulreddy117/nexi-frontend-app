@@ -27,5 +27,14 @@ export type RootStackParamList = {
     bio?: string;
     height?: string;
   };
-  Settings: undefined;          // <-- R
+  Settings: undefined;    
+  Inbox: undefined;  // ← NEW
+  Chat: {
+    receiverId: string;
+    receiverName: string;
+    receiverPic?: string;
+  };// <-- R
+
+  
+  
 };

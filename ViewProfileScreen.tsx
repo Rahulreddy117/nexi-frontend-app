@@ -27,6 +27,7 @@ interface Auth0IdToken {
   picture: string;
   email: string;
   email_verified: boolean;
+  
 }
 
 type HomeRouteProp = RouteProp<RootStackParamList, 'Home'>;
@@ -162,10 +163,10 @@ export default function ViewProfileScreen() {
   const handleSettings = () => {
     navigation.navigate('Settings');
   };
-
-  /* ------------------------------------------------------------------ */
-  /*  Themed button component                                           */
-  /* ------------------------------------------------------------------ */
+   
+  /* ------------------------------------------------------------------ */        
+  /*  Themed button component                                           */         
+  /* ------------------------------------------------------------------ */          
   const ThemedButton = ({
     title,
     onPress,

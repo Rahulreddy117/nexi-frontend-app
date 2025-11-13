@@ -59,6 +59,8 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+    // Location services for foreground location updates
+    implementation 'com.google.android.gms:play-services-location:21.3.0'
 }
 
 apply from: "../../node_modules/react-native-vector-icons/fonts.gradle"

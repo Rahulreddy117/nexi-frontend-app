@@ -16,6 +16,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Picker } from '@react-native-picker/picker';
 import type { RootStackParamList } from './types/navigation';
 import { useTheme } from './ThemeContext';
 
@@ -50,17 +51,32 @@ async function queryUser(auth0Id: string): Promise<any | null> {
   }
 
   const data = await response.json();
-  console.log('Setup Query Result:', data);
   if (data.results && data.results.length > 0) {
     return data.results[0];
   }
   return null;
 }
 
+async function queryUserByUsername(username: string): Promise<any | null> {
+  const where = { username };
+  const whereStr = encodeURIComponent(JSON.stringify(where));
+  const response = await fetch(`${API_URL}/classes/UserProfile?where=${whereStr}&limit=1`, {
+    method: 'GET',
+    headers: {
+      'X-Parse-Application-Id': APP_ID,
+      'X-Parse-Master-Key': MASTER_KEY,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) return null;
+  const data = await response.json();
+  return data.results && data.results.length > 0 ? data.results[0] : null;
+}
+
 async function saveUser(userData: any, objectId?: string): Promise<any> {
   const url = objectId ? `${API_URL}/classes/UserProfile/${objectId}` : `${API_URL}/classes/UserProfile`;
   const method = objectId ? 'PUT' : 'POST';
-  console.log('Save Request:', { url, method, userData });
 
   const response = await fetch(url, {
     method,
@@ -78,9 +94,7 @@ async function saveUser(userData: any, objectId?: string): Promise<any> {
     throw new Error(`Save failed: ${response.status} - ${errorText}`);
   }
 
-  const result = await response.json();
-  console.log('Save Result:', result);
-  return result;
+  return await response.json();
 }
 
 export default function ProfileSetupScreen() {
@@ -93,14 +107,18 @@ export default function ProfileSetupScreen() {
   const initialBio = params.bio || '';
   const initialProfilePic = params.profilePicUrl || null;
   const initialHeight = params.height || '';
+  const initialGender = params.gender || '';
 
   const [username, setUsername] = useState(initialUsername);
   const [bio, setBio] = useState(initialBio);
   const [profilePic, setProfilePic] = useState<string | null>(initialProfilePic);
   const [uploading, setUploading] = useState(false);
   const [height, setHeight] = useState(initialHeight);
+  const [gender, setGender] = useState(initialGender || '');
   const [isEditMode, setIsEditMode] = useState(initialIsEditMode || false);
+  const [usernameError, setUsernameError] = useState<string | null>(null);
 
+  // Prefill from DB if in edit mode
   useEffect(() => {
     const prefillIfEdit = async () => {
       if (isEditMode && (!initialUsername || !initialBio)) {
@@ -111,6 +129,7 @@ export default function ProfileSetupScreen() {
             setBio(existing.bio || '');
             setProfilePic(existing.profilePicUrl || null);
             setHeight(existing.height || '');
+            setGender(existing.gender || '');
           }
         } catch (error) {
           console.error('Prefill Error:', error);
@@ -120,6 +139,50 @@ export default function ProfileSetupScreen() {
     prefillIfEdit();
   }, [isEditMode, userId, initialUsername, initialBio]);
 
+  // Debounced username validation + DB check
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      if (username && username !== initialUsername) {
+        validateAndCheckUsername(username);
+      } else {
+        setUsernameError(null);
+      }
+    }, 600);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [username, initialUsername]);
+
+  const validateAndCheckUsername = async (value: string) => {
+    setUsernameError(null);
+
+    if (value.length > 20) {
+      setUsernameError('Username must be 20 characters or less');
+      return;
+    }
+
+    if (value.includes(' ')) {
+      setUsernameError('Space is not allowed');
+      return;
+    }
+
+    const allowedPattern = /^[a-zA-Z0-9.\-_]+$/;
+    if (!allowedPattern.test(value)) {
+      setUsernameError('Only letters, numbers , ( - )  ( _ ) (.) are allowed');
+      return;
+    }
+
+    if (isEditMode && value === initialUsername) return;
+
+    try {
+      const existing = await queryUserByUsername(value);
+      if (existing && existing.auth0Id !== userId) {
+        setUsernameError('Username already taken');
+      }
+    } catch (err) {
+      console.error('Username availability check failed:', err);
+    }
+  };
+
   const pickImage = () => {
     ImagePicker.openPicker({
       width: 300,
@@ -128,14 +191,15 @@ export default function ProfileSetupScreen() {
       cropperCircleOverlay: true,
       mediaType: 'photo',
       compressImageQuality: 0.8,
-    }).then((image) => {
-      console.log('Cropped Image:', image);
-      setProfilePic(image.path);
-    }).catch((error) => {
-      if (error.code !== 'E_PICKER_CANCELLED') {
-        Alert.alert('Error', 'Failed to pick and crop image.');
-      }
-    });
+    })
+      .then((image) => {
+        setProfilePic(image.path);
+      })
+      .catch((error) => {
+        if (error.code !== 'E_PICKER_CANCELLED') {
+          Alert.alert('Error', 'Failed to pick and crop image.');
+        }
+      });
   };
 
   const uploadProfilePic = async (localUri: string): Promise<string | null> => {
@@ -150,7 +214,7 @@ export default function ProfileSetupScreen() {
       data.append('upload_preset', UPLOAD_PRESET);
       data.append('folder', 'profiles');
 
-      let res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
+      const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
         method: 'POST',
         body: data,
         headers: {
@@ -158,8 +222,7 @@ export default function ProfileSetupScreen() {
         },
       });
 
-      let json = await res.json();
-      console.log('Cloudinary Upload Result:', json);
+      const json = await res.json();
       return json.secure_url || null;
     } catch (error) {
       console.error('Upload Error:', error);
@@ -172,6 +235,16 @@ export default function ProfileSetupScreen() {
   const saveProfile = async () => {
     if (!username.trim()) {
       Alert.alert('Error', 'Username is required');
+      return;
+    }
+
+    if (usernameError) {
+      Alert.alert('Error', usernameError);
+      return;
+    }
+
+    if (!gender) {
+      Alert.alert('Error', 'Please select your gender');
       return;
     }
 
@@ -199,23 +272,15 @@ export default function ProfileSetupScreen() {
         username,
         bio,
         height,
+        gender,
         profilePicUrl: profilePicUrl || null,
       };
-
-      console.log('Final UserDoc:', userDoc);
 
       const result = await saveUser(userDoc, objectId);
 
       const parseObjectId = objectId || result.objectId;
       if (parseObjectId) {
         await AsyncStorage.setItem('parseObjectId', parseObjectId);
-      }
-
-      const isCreate = !objectId;
-      if (isCreate && !result.objectId) {
-        throw new Error('Create response missing objectId');
-      } else if (!isCreate && !result.updatedAt) {
-        throw new Error('Update response missing updatedAt');
       }
 
       Alert.alert('Success', isEditMode ? 'Profile updated!' : 'Profile created!');
@@ -225,6 +290,7 @@ export default function ProfileSetupScreen() {
         bio,
         profilePicUrl,
         height,
+        gender,
       } as any);
     } catch (error: any) {
       console.error('Save Profile Error:', error);
@@ -235,9 +301,9 @@ export default function ProfileSetupScreen() {
   const ThemedButton = ({ title, onPress, disabled }: { title: string; onPress: () => void; disabled?: boolean }) => (
     <TouchableOpacity
       style={[
-        styles.button, 
+        styles.button,
         disabled && styles.disabledButton,
-        { backgroundColor: disabled ? colors.inactive : colors.accent }
+        { backgroundColor: disabled ? colors.inactive : colors.accent },
       ]}
       onPress={onPress}
       disabled={disabled}
@@ -253,18 +319,18 @@ export default function ProfileSetupScreen() {
   return (
     <ScrollView contentContainerStyle={[styles.scroll, { backgroundColor: colors.background }]}>
       <View style={styles.container}>
-        <Text style={[styles.title, { color: colors.text }]}>{isEditMode ? 'Edit Your Profile' : 'Complete Your Profile'}</Text>
+        <Text style={[styles.title, { color: colors.text }]}>
+          {isEditMode ? 'Edit Your Profile' : 'Complete Your Profile'}
+        </Text>
 
-        <View style={[
-          styles.card,
-          { backgroundColor: colors.background }
-        ]}>
+        <View style={[styles.card, { backgroundColor: colors.background }]}>
+          {/* Profile Picture */}
           <TouchableOpacity onPress={pickImage} style={styles.imageContainer}>
             {profilePic ? (
               <View style={styles.imageWrapper}>
-                <Image 
-                  source={{ uri: profilePic }} 
-                  style={[styles.profileImage, { borderColor: colors.border }]} 
+                <Image
+                  source={{ uri: profilePic }}
+                  style={[styles.profileImage, { borderColor: colors.border }]}
                 />
                 {isEditMode && (
                   <View style={[styles.editOverlay, { backgroundColor: overlayBg }]}>
@@ -279,20 +345,28 @@ export default function ProfileSetupScreen() {
             )}
           </TouchableOpacity>
 
+          {/* Username Input */}
           <TextInput
             style={[
               styles.input,
-              { borderColor: colors.border, backgroundColor: colors.background, color: colors.text }
+              { borderColor: usernameError ? '#ff3b30' : colors.border, backgroundColor: colors.background, color: colors.text },
             ]}
             placeholder="Username"
             value={username}
             onChangeText={setUsername}
             placeholderTextColor={colors.secondaryText}
+            autoCapitalize="none"
+            autoCorrect={false}
           />
+          {usernameError ? (
+            <Text style={styles.errorText}>{usernameError}</Text>
+          ) : null}
+
+          {/* Height Input */}
           <TextInput
             style={[
               styles.input,
-              { borderColor: colors.border, backgroundColor: colors.background, color: colors.text }
+              { borderColor: colors.border, backgroundColor: colors.background, color: colors.text },
             ]}
             placeholder="Height (in cm)"
             value={height}
@@ -300,11 +374,27 @@ export default function ProfileSetupScreen() {
             keyboardType="numeric"
             placeholderTextColor={colors.secondaryText}
           />
+
+          {/* Gender Dropdown */}
+          <View style={[styles.pickerContainer, { borderColor: colors.border }]}>
+            <Picker
+              selectedValue={gender}
+              onValueChange={(itemValue) => setGender(itemValue)}
+              style={{ color: colors.text }}
+              dropdownIconColor={colors.secondaryText}
+            >
+              <Picker.Item label="Select Gender" value="" />
+              <Picker.Item label="Male" value="male" />
+              <Picker.Item label="Female" value="female" />
+            </Picker>
+          </View>
+
+          {/* Bio Input */}
           <TextInput
             style={[
-              styles.input, 
+              styles.input,
               styles.bioInput,
-              { borderColor: colors.border, backgroundColor: colors.background, color: colors.text }
+              { borderColor: colors.border, backgroundColor: colors.background, color: colors.text },
             ]}
             placeholder="Short bio (optional)"
             value={bio}
@@ -314,7 +404,8 @@ export default function ProfileSetupScreen() {
             placeholderTextColor={colors.secondaryText}
           />
 
-          <ThemedButton 
+          {/* Save Button */}
+          <ThemedButton
             title={uploading ? 'Uploading...' : isEditMode ? 'Update Profile' : 'Save Profile'}
             onPress={saveProfile}
             disabled={uploading}
@@ -330,22 +421,48 @@ const styles = StyleSheet.create({
   container: { flex: 1, alignItems: 'center', paddingHorizontal: 20 },
   title: { fontSize: 22, fontWeight: '600', marginBottom: 20 },
   card: { width: '100%', borderRadius: 12, padding: 20 },
-  input: { borderWidth: 1, borderRadius: 8, padding: 12, marginTop: 15, fontSize: 16 },
+  input: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 15,
+    fontSize: 16,
+  },
   bioInput: { height: 100, textAlignVertical: 'top' },
   imageContainer: { alignSelf: 'center', marginBottom: 20 },
   imageWrapper: { position: 'relative', width: 100, height: 100, borderRadius: 50 },
   profileImage: { width: 100, height: 100, borderRadius: 60, borderWidth: 2 },
   editOverlay: {
-    position: 'absolute', top: '50%', left: '50%',
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
     transform: [{ translateX: -16 }, { translateY: -16 }],
-    borderRadius: 20, width: 32, height: 32,
-    justifyContent: 'center', alignItems: 'center'
+    borderRadius: 20,
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   placeholderImage: {
-    width: 100, height: 100, borderRadius: 60,
-    justifyContent: 'center', alignItems: 'center'
+    width: 100,
+    height: 100,
+    borderRadius: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   button: { paddingVertical: 14, borderRadius: 8, marginTop: 25 },
   disabledButton: { opacity: 0.6 },
   buttonText: { textAlign: 'center', fontSize: 16, fontWeight: '600' },
-});    
+  pickerContainer: {
+    borderWidth: 1,
+    borderRadius: 8,
+    marginTop: 15,
+    overflow: 'hidden',
+  },
+  errorText: {
+    color: '#ff3b30',
+    fontSize: 13,
+    marginTop: 5,
+    marginLeft: 5,
+  },
+});

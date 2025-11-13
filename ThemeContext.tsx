@@ -34,6 +34,8 @@ const getThemeColors = (mode: ThemeMode) => {
       border: '#333',
       accent: '#333',
       buttonText: '#fff',
+      primary: '#0A84FF', 
+      card: '#1C1C1E',
     };
   }
 };
