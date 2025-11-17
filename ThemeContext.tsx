@@ -19,6 +19,9 @@ const getThemeColors = (mode: ThemeMode) => {
       border: '#ddd',
       accent: '#666',
       buttonText: '#fff',
+      notificationBg: 'rgba(99, 102, 241, 0.1)', // light indigo tint
+
+
     };
   } else {
     return {
@@ -36,6 +39,7 @@ const getThemeColors = (mode: ThemeMode) => {
       buttonText: '#fff',
       primary: '#0A84FF', 
       card: '#1C1C1E',
+      notificationBg: 'rgba(99, 102, 241, 0.2)',
     };
   }
 };

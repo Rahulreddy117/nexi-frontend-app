@@ -1,6 +1,7 @@
-// types/navigation.ts
+// types/navigation.ts (Updated: userId Optional in UserProfile)
 export type RootStackParamList = {
   Login: undefined;
+
   ProfileSetup: {
     userId: string;
     email: string;
@@ -10,31 +11,40 @@ export type RootStackParamList = {
     bio?: string;
     profilePicUrl?: string | null;
     height?: string;
+    gender?: string;
     isEditMode?: boolean;
   };
+
   Home: {
     userId: string;
     username: string;
     bio: string;
     profilePicUrl: string | null;
     height?: string;
+    gender?: string;        // ← ADDED: now allowed
   };
-  SearchBar: { initialQuery?: string };          // ← NEW
-  UserProfile: {                                 // ← NEW
-    userId: string;
+
+  SearchBar: {
+    initialQuery?: string;
+  };
+
+  UserProfile: {
+    userId?: string;        // ← CHANGED: Optional (for auth0Id from Search/Home)
     username: string;
     profilePicUrl?: string | null;
     bio?: string;
     height?: string;
+    gender?: string;  
+    objectId?: string;      // ← For Maps (objectId from Marker)
   };
-  Settings: undefined;    
-  Inbox: undefined;  // ← NEW
+
+  Settings: undefined;
+
+  Inbox: undefined;
+
   Chat: {
     receiverId: string;
     receiverName: string;
     receiverPic?: string;
-  };// <-- R
-
-  
-  
+  };
 };

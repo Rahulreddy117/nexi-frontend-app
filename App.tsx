@@ -12,11 +12,13 @@ import {
   StyleSheet,
   Image,
 } from 'react-native';
-import ChatScreen from './screens/ChatScreen';      
-import InboxScreen from './screens/InboxScreen';  // ← ADD THIS LINE    // ← IMPORT HERE
 
-import SearchBarScreen from './screens/SearchScreen';           // ← NEW
-import UserProfileScreen from './screens/UserProfileScreen';       // ← NEW
+import ChatScreen from './screens/ChatScreen';
+import InboxScreen from './screens/InboxScreen';
+import NotificationScreen from './screens/NotificationScreen';
+
+import SearchBarScreen from './screens/SearchScreen';
+import UserProfileScreen from './screens/UserProfileScreen';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { jwtDecode } from 'jwt-decode';
@@ -24,7 +26,7 @@ import { jwtDecode } from 'jwt-decode';
 import LoginScreen from './LoginScreen';
 import ProfileSetupScreen from './ProfileSetupScreen';
 import ViewProfileScreen from './ViewProfileScreen';
-import MapsScreen from './MapsScreen';               // direct import
+import MapsScreen from './MapsScreen';
 import SettingsScreen from './SettingsScreen';
 
 import type { RootStackParamList } from './types/navigation';
@@ -84,14 +86,35 @@ function LoadingScreen() {
 /* ------------------------------------------------------------------ */
 /*  Bottom-Tab navigator (Home)                                       */
 /* ------------------------------------------------------------------ */
-
 interface BottomTabsProps {
   profilePicUrl?: string | null;
-  homeParams?: any; // Pass through to ViewProfile
+  homeParams?: any;
 }
 
 function BottomTabsNavigator({ profilePicUrl, homeParams }: BottomTabsProps) {
   const { colors } = useTheme();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const auth0Id = await AsyncStorage.getItem('auth0Id');
+      if (!auth0Id) return;
+      const res = await fetch(
+        `${API_URL}/classes/FollowNotification?where=${encodeURIComponent(
+          JSON.stringify({ followedId: auth0Id, read: false })
+        )}&count=1`,
+        {
+          headers: {
+            'X-Parse-Application-Id': APP_ID,
+            'X-Parse-Master-Key': MASTER_KEY,
+          },
+        }
+      );
+      const data = await res.json();
+      setUnreadCount(data.count || 0);
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <Tab.Navigator
@@ -104,18 +127,33 @@ function BottomTabsNavigator({ profilePicUrl, homeParams }: BottomTabsProps) {
         tabBarShowLabel: false,
       }}
     >
-      {/* MAPS – direct component */}
       <Tab.Screen
         name="Maps"
-        component={MapsScreen}               // direct
+        component={MapsScreen}
         options={{
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="location-outline" size={size} color={color} />
+          tabBarIcon: ({ color, size }) => <Ionicons name="location-outline" size={size} color={color} />,
+        }}
+      />
+
+      <Tab.Screen
+        name="Notifications"
+        component={NotificationScreen}
+        options={{
+          tabBarIcon: ({ size }) => (
+            <View>
+              <Ionicons name="notifications-outline" size={size} color={colors.iconColor} />
+              {unreadCount > 0 && (
+                <View style={[styles.badge, { backgroundColor: '#ef4444' }]}>
+                  <Text style={styles.badgeText}>
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </Text>
+                </View>
+              )}
+            </View>
           ),
         }}
       />
 
-      {/* PROFILE */}
       <Tab.Screen
         name="ViewProfile"
         options={{
@@ -148,6 +186,18 @@ function BottomTabsNavigator({ profilePicUrl, homeParams }: BottomTabsProps) {
 const styles = StyleSheet.create({
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { marginTop: 10, fontSize: 16 },
+  badge: {
+    position: 'absolute',
+    right: -6,
+    top: -3,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  badgeText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
 });
 
 /* ------------------------------------------------------------------ */
@@ -173,7 +223,6 @@ export default function App() {
 
         if (snap) {
           await AsyncStorage.setItem('parseObjectId', snap.objectId);
-
           setInitialRouteParams({
             userId: userInfo.sub,
             username: snap.username || userInfo.name,
@@ -209,29 +258,25 @@ export default function App() {
     <ThemeProvider>
       <NavigationContainer>
         <Stack.Navigator initialRouteName={initialRouteName} screenOptions={{ headerShown: false }}>
-  <Stack.Screen name="Login" component={LoginScreen} />
-  <Stack.Screen name="ProfileSetup">
-    {() => <ProfileSetupScreen {...(initialRouteParams as any)} />}
-  </Stack.Screen>
-
-  <Stack.Screen name="Home">
-    {() => (
-      <BottomTabsNavigator
-        profilePicUrl={initialRouteParams?.profilePicUrl}
-        homeParams={initialRouteParams}
-      />
-    )}
-  </Stack.Screen>
-  <Stack.Screen name="UserProfile" component={UserProfileScreen} />
-  <Stack.Screen name="Chat" component={ChatScreen} />
-  <Stack.Screen name="Inbox" component={InboxScreen} />
-
-  <Stack.Screen name="Settings" component={SettingsScreen} />
-  
-  {/* ADD THESE TWO */}
-  <Stack.Screen name="SearchBar" component={SearchBarScreen} />
-</Stack.Navigator>
+          <Stack.Screen name="Login" component={LoginScreen} />
+          <Stack.Screen name="ProfileSetup">
+            {() => <ProfileSetupScreen {...(initialRouteParams as any)} />}
+          </Stack.Screen>
+          <Stack.Screen name="Home">
+            {() => (
+              <BottomTabsNavigator
+                profilePicUrl={initialRouteParams?.profilePicUrl}
+                homeParams={initialRouteParams}
+              />
+            )}
+          </Stack.Screen>
+          <Stack.Screen name="UserProfile" component={UserProfileScreen} />
+          <Stack.Screen name="Chat" component={ChatScreen} />
+          <Stack.Screen name="Inbox" component={InboxScreen} />
+          <Stack.Screen name="Settings" component={SettingsScreen} />
+          <Stack.Screen name="SearchBar" component={SearchBarScreen} />
+        </Stack.Navigator>
       </NavigationContainer>
     </ThemeProvider>
   );
-}    
+}

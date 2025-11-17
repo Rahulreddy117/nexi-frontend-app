@@ -31,9 +31,7 @@ async function queryUser(auth0Id: string): Promise<any | null> {
   const where = { auth0Id };
   const whereStr = encodeURIComponent(JSON.stringify(where));
   const url = `${API_URL}/classes/UserProfile?where=${whereStr}&limit=1`;
-
   console.log('Querying UserProfile:', url);
-
   try {
     const response = await fetch(url, {
       method: 'GET',
@@ -43,17 +41,13 @@ async function queryUser(auth0Id: string): Promise<any | null> {
         'Content-Type': 'application/json',
       },
     });
-
     const text = await response.text();
     console.log('Raw response:', text);
-
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${text}`);
     }
-
     const data = JSON.parse(text);
     console.log('Parsed UserProfile:', data);
-
     return data.results?.[0] || null;
   } catch (err: any) {
     console.error('queryUser failed:', err.message);
@@ -69,10 +63,10 @@ async function createUserProfile(auth0Id: string, email: string, name: string): 
     name,
     bio: '',
     profilePicUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=6366f1&color=fff`,
+    height: '',
+    gender: '',
   };
-
   console.log('Creating UserProfile:', payload);
-
   const response = await fetch(`${API_URL}/classes/UserProfile`, {
     method: 'POST',
     headers: {
@@ -82,14 +76,11 @@ async function createUserProfile(auth0Id: string, email: string, name: string): 
     },
     body: JSON.stringify(payload),
   });
-
   const text = await response.text();
   console.log('Create response:', text);
-
   if (!response.ok) {
     throw new Error(`Create failed: ${response.status} - ${text}`);
   }
-
   return JSON.parse(text);
 }
 
@@ -101,7 +92,6 @@ export default function LoginScreen() {
   const onLogin = async () => {
     setLoading(true);
     setError(null);
-
     try {
       console.log('Starting Auth0 login...');
       const credentials = await auth0.webAuth.authorize({
@@ -115,7 +105,6 @@ export default function LoginScreen() {
 
       await EncryptedStorage.setItem('idToken', idToken);
       const userInfo: Auth0IdToken = jwtDecode(idToken);
-
       console.log('Auth0 User Info:', userInfo);
 
       // Save auth0Id for chat
@@ -124,23 +113,43 @@ export default function LoginScreen() {
 
       // Check if profile exists
       let userSnap = await queryUser(userInfo.sub);
+      let isNewUser = false;
 
       if (!userSnap) {
         console.log('No profile → creating...');
         userSnap = await createUserProfile(userInfo.sub, userInfo.email, userInfo.name);
         console.log('Profile created:', userSnap);
+        isNewUser = true;
       }
 
       // Save Parse objectId
       await AsyncStorage.setItem('parseObjectId', userSnap.objectId);
       console.log('Saved parseObjectId:', userSnap.objectId);
 
-      // Navigate to Home
+      // NEW: Redirect new users to ProfileSetup
+      if (isNewUser) {
+        navigation.replace('ProfileSetup', {
+          userId: userInfo.sub,
+          email: userInfo.email,
+          name: userInfo.name,
+          username: userSnap.username || '',
+          bio: userSnap.bio || '',
+          profilePicUrl: userSnap.profilePicUrl || userInfo.picture,
+          height: userSnap.height || '',
+          gender: userSnap.gender || '',
+          isEditMode: false,
+        });
+        return; // Prevent going to Home
+      }
+
+      // Existing users go to Home
       navigation.replace('Home', {
         userId: userInfo.sub,
         username: userSnap.username || userInfo.name,
         bio: userSnap.bio || '',
         profilePicUrl: userSnap.profilePicUrl || userInfo.picture,
+        height: userSnap.height || '',
+        gender: userSnap.gender || '',
       });
     } catch (e: any) {
       console.error('Login failed:', e);

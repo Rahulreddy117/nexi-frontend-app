@@ -17,7 +17,6 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import type { RootStackParamList } from './types/navigation';
 import { useTheme } from './ThemeContext';
 
-
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
 /* ------------------------------------------------------------------ */
@@ -27,7 +26,6 @@ interface Auth0IdToken {
   picture: string;
   email: string;
   email_verified: boolean;
-  
 }
 
 type HomeRouteProp = RouteProp<RootStackParamList, 'Home'>;
@@ -44,10 +42,12 @@ export default function ViewProfileScreen() {
   const [username, setUsername] = useState('Loading...');
   const [bio, setBio] = useState('');
   const [profilePicUrl, setProfilePicUrl] = useState<string | null>(null);
+  const [height, setHeight] = useState<string | null>(null);
+  const [followersCount, setFollowersCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [height, setHeight] = useState<string | null>(null);
 
   /* ------------------------------------------------------------------ */
   /*  Parse helpers                                                     */
@@ -56,6 +56,12 @@ export default function ViewProfileScreen() {
   const APP_ID = 'myAppId';
   const MASTER_KEY = 'myMasterKey';
 
+  const HEADERS = {
+    'X-Parse-Application-Id': APP_ID,
+    'X-Parse-Master-Key': MASTER_KEY,
+    'Content-Type': 'application/json',
+  };
+
   async function queryUser(auth0Id: string): Promise<any | null> {
     const where = { auth0Id };
     const whereStr = encodeURIComponent(JSON.stringify(where));
@@ -63,18 +69,14 @@ export default function ViewProfileScreen() {
       `${API_URL}/classes/UserProfile?where=${whereStr}&limit=1`,
       {
         method: 'GET',
-        headers: {
-          'X-Parse-Application-Id': APP_ID,
-          'X-Parse-Master-Key': MASTER_KEY,
-          'Content-Type': 'application/json',
-        },
+        headers: HEADERS,
       }
     );
 
     if (!response.ok) {
       const errorText = await response.text();
       console.error('Query Error:', response.status, errorText);
-      throw new Error(`Query failed: ${response.status} - ${errorText}`);
+      return null;
     }
 
     const data = await response.json();
@@ -82,7 +84,7 @@ export default function ViewProfileScreen() {
   }
 
   /* ------------------------------------------------------------------ */
-  /*  Fetch profile                                                     */
+  /*  Fetch profile (own profile)                                       */
   /* ------------------------------------------------------------------ */
   const fetchProfile = useCallback(async () => {
     const storedToken = await EncryptedStorage.getItem('idToken');
@@ -95,13 +97,15 @@ export default function ViewProfileScreen() {
     try {
       const userInfo: Auth0IdToken = jwtDecode(storedToken);
       setUserId(userInfo.sub);
-      const userSnap = await queryUser(userInfo.sub);
 
+      const userSnap = await queryUser(userInfo.sub);
       if (userSnap) {
         setUsername(userSnap.username || userInfo.name || 'Unknown');
         setBio(userSnap.bio || '');
         setProfilePicUrl(userSnap.profilePicUrl || userInfo.picture || null);
         setHeight(userSnap.height || null);
+        setFollowersCount(userSnap.followersCount ?? 0);
+        setFollowingCount(userSnap.followingCount ?? 0);
       } else {
         setUsername('No Profile');
       }
@@ -126,6 +130,8 @@ export default function ViewProfileScreen() {
       setBio(params.bio ?? '');
       setProfilePicUrl(params.profilePicUrl ?? null);
       setHeight(params.height ?? null);
+      setFollowersCount(params.followersCount ?? 0);
+      setFollowingCount(params.followingCount ?? 0);
       setLoading(false);
     } else {
       // No params → fetch from storage / server
@@ -163,10 +169,10 @@ export default function ViewProfileScreen() {
   const handleSettings = () => {
     navigation.navigate('Settings');
   };
-   
-  /* ------------------------------------------------------------------ */        
-  /*  Themed button component                                           */         
-  /* ------------------------------------------------------------------ */          
+
+  /* ------------------------------------------------------------------ */
+  /*  Themed button component                                           */
+  /* ------------------------------------------------------------------ */
   const ThemedButton = ({
     title,
     onPress,
@@ -215,8 +221,9 @@ export default function ViewProfileScreen() {
           />
         }
       >
-        <Text style={[styles.title, { color: colors.text }]}>Welcome to Home Feed!</Text>
+        <Text style={[styles.title, { color: colors.text }]}>Your Profile</Text>
 
+        {/* Avatar */}
         {profilePicUrl ? (
           <Image
             source={{ uri: profilePicUrl }}
@@ -240,12 +247,37 @@ export default function ViewProfileScreen() {
           </View>
         )}
 
+        {/* Follow stats – same look as UserProfileScreen */}
+        <View style={styles.followStats}>
+          <TouchableOpacity
+            style={styles.followStatBtn}
+            onPress={() => {
+              // TODO: navigate to followers list
+            }}
+          >
+            <Text style={[styles.followStatText, { color: colors.text }]}>Followers</Text>
+            <Text style={[styles.followStatCount, { color: colors.text }]}>{followersCount}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.followStatBtn}
+            onPress={() => {
+              // TODO: navigate to following list
+            }}
+          >
+            <Text style={[styles.followStatText, { color: colors.text }]}>Following</Text>
+            <Text style={[styles.followStatCount, { color: colors.text }]}>{followingCount}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Basic info */}
         <Text style={[styles.info, { color: colors.text }]}>Username: {username}</Text>
         <Text style={[styles.info, { color: colors.text }]}>Bio: {bio || 'No bio set'}</Text>
         <Text style={[styles.info, { color: colors.text }]}>
           Height: {height ? `${height} cm` : 'Not set'}
         </Text>
 
+        {/* Edit button */}
         <View style={styles.buttonContainer}>
           <ThemedButton title="Edit Profile" onPress={handleEditProfile} />
         </View>
@@ -265,40 +297,64 @@ const styles = StyleSheet.create({
   containerWrapper: { flex: 1 },
   container: {
     flexGrow: 1,
-    justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+    paddingTop: 60,
   },
-  title: { fontSize: 18, fontWeight: '600', marginBottom: 10 },
+  title: { fontSize: 20, fontWeight: '600', marginBottom: 12 },
   info: { fontSize: 16, marginVertical: 5, textAlign: 'center' },
+
+  /* Avatar */
   avatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    marginVertical: 10,
-    borderWidth: 1,
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    marginVertical: 12,
+    borderWidth: 2,
   },
   avatarPlaceholder: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 110,
+    height: 110,
+    borderRadius: 55,
     justifyContent: 'center',
     alignItems: 'center',
-    marginVertical: 10,
+    marginVertical: 12,
   },
-  placeholderText: { fontSize: 12 },
-  loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  buttonContainer: { marginVertical: 10, width: '100%', gap: 10 },
-  settingsIcon: { position: 'absolute', top: 10, right: 10, zIndex: 1, padding: 10 },
+  placeholderText: { fontSize: 13 },
+
+  /* Follow stats – copied from UserProfileScreen */
+  followStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '100%',
+    marginVertical: 16,
+  },
+  followStatBtn: {
+    alignItems: 'center',
+    padding: 8,
+  },
+  followStatText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  followStatCount: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+
+  /* Buttons */
+  buttonContainer: { marginVertical: 12, width: '100%', gap: 10 },
   button: {
     paddingVertical: 12,
-   
-
- paddingHorizontal: 24,
+    paddingHorizontal: 24,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 44,
   },
   buttonText: { fontSize: 16, fontWeight: '600' },
+
+  /* Misc */
+  settingsIcon: { position: 'absolute', top: 20, right: 10, zIndex: 1, padding: 10 },
+  loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 });
