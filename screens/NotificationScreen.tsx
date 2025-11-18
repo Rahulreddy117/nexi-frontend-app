@@ -8,21 +8,16 @@ import {
   Image,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
+  
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../ThemeContext';
+import { useFocusEffect } from '@react-navigation/native';
 
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
 const MASTER_KEY = 'myMasterKey';
-const HEADERS = {
-  'X-Parse-Application-Id': APP_ID,
-  'X-Parse-Master-Key': MASTER_KEY,
-  'Content-Type': 'application/json',
-};
 
-// Helper: "X minutes ago", "1 hour ago", "3 days ago"
 const timeAgo = (dateString: string): string => {
   const now = new Date();
   const past = new Date(dateString);
@@ -32,9 +27,9 @@ const timeAgo = (dateString: string): string => {
   const diffDays = Math.floor(diffHours / 24);
 
   if (diffMins < 1) return 'just now';
-  if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
-  if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-  return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  return `${diffDays}d ago`;
 };
 
 export default function NotificationScreen() {
@@ -54,67 +49,69 @@ export default function NotificationScreen() {
         `${API_URL}/classes/FollowNotification?where=${encodeURIComponent(
           JSON.stringify({ followedId: auth0Id })
         )}&order=-createdAt&include=followerProfile`,
-        { headers: HEADERS }
+        {
+          headers: {
+            'X-Parse-Application-Id': APP_ID,
+            'X-Parse-Master-Key': MASTER_KEY,
+          },
+        }
       );
       const data = await res.json();
       setNotifications(data.results || []);
     } catch (err) {
       console.error('Failed to load notifications:', err);
-      Alert.alert('Error', 'Failed to load notifications');
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    fetchNotifications();
-  }, [fetchNotifications]);
+    useFocusEffect(
+    useCallback(() => {
+      fetchNotifications();   // ← only this, NO polling
+    }, [fetchNotifications])
+  );  
 
   const markAsRead = async (id: string) => {
     try {
       await fetch(`${API_URL}/classes/FollowNotification/${id}`, {
         method: 'PUT',
-        headers: HEADERS,
+        headers: {
+          'X-Parse-Application-Id': APP_ID,
+          'X-Parse-Master-Key': MASTER_KEY,
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ read: true }),
       });
+
       setNotifications(prev =>
         prev.map(n => (n.objectId === id ? { ...n, read: true } : n))
       );
     } catch (err) {
-      console.error('Failed to mark as read:', err);
+      console.error('Mark as read failed:', err);
     }
   };
 
   const renderItem = ({ item }: { item: any }) => {
     const profile = item.followerProfile;
     const username = profile?.username || 'Someone';
-    const picUrl =
-      profile?.profilePicUrl ||
-      `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=6366f1&color=fff`;
-    const time = item.createdAt ? timeAgo(item.createdAt) : 'just now';
+    const picUrl = profile?.profilePicUrl || `https://ui-avatars.com/api/?name=${username}&background=6366f1&color=fff`;
 
     return (
       <TouchableOpacity
         style={[
           styles.item,
-          {
-            backgroundColor: item.read
-              ? 'transparent'
-              : colors.notificationBg || 'rgba(99, 102, 241, 0.1)',
-          },
+          { backgroundColor: item.read ? 'transparent' : 'rgba(99, 102, 241, 0.12)' },
         ]}
         onPress={() => markAsRead(item.objectId)}
       >
         <Image source={{ uri: picUrl }} style={styles.avatar} />
         <View style={styles.textContainer}>
-          <Text style={[styles.username, { color: colors.text }]}>
-            {username}
-          </Text>
+          <Text style={[styles.username, { color: colors.text }]}>{username}</Text>
           <Text style={[styles.message, { color: colors.secondaryText }]}>
-            started following you · {time}
+            started following you · {timeAgo(item.createdAt)}
           </Text>
         </View>
-        {!item.read && <View style={styles.dot} />}
+        {!item.read && <View style={styles.unreadDot} />}
       </TouchableOpacity>
     );
   };
@@ -134,14 +131,10 @@ export default function NotificationScreen() {
         data={notifications}
         keyExtractor={item => item.objectId}
         renderItem={renderItem}
+        refreshing={loading}                 // ← add this
+        onRefresh={fetchNotifications}
         ListEmptyComponent={
-          <Text
-            style={{
-              color: colors.secondaryText,
-              textAlign: 'center',
-              marginTop: 20,
-            }}
-          >
+          <Text style={{ color: colors.secondaryText, textAlign: 'center', marginTop: 50 }}>
             No notifications yet
           </Text>
         }
@@ -151,24 +144,24 @@ export default function NotificationScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 50 },
-  title: { fontSize: 24, fontWeight: 'bold', textAlign: 'center', marginBottom: 20 },
+  container: { flex: 1, paddingTop: 60 },
+  title: { fontSize: 28, fontWeight: 'bold', textAlign: 'center', marginBottom: 20 },
   item: {
     flexDirection: 'row',
-    padding: 14,
+    padding: 16,
     marginHorizontal: 16,
     marginVertical: 6,
-    borderRadius: 14,
+    borderRadius: 16,
     alignItems: 'center',
-    elevation: 1,
+    elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
   },
-  avatar: { width: 48, height: 48, borderRadius: 24, marginRight: 14 },
-  textContainer: { flex: 1 },
-  username: { fontWeight: '600', fontSize: 16 },
-  message: { fontSize: 13.5, marginTop: 2 },
-  dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#6366f1' },
+  avatar: { width: 50, height: 50, borderRadius: 25, marginRight: 16 },              
+  textContainer: { flex: 1 },   
+  username: { fontWeight: '600', fontSize: 16 },   
+  message: { fontSize: 14, marginTop: 4, opacity: 0.8 },        
+  unreadDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#6366f1' },     
 });

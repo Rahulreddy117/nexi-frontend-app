@@ -46,5 +46,10 @@ export type RootStackParamList = {
     receiverId: string;
     receiverName: string;
     receiverPic?: string;
-  };
+  };   
+
+  FollowingFollowers: {
+    userId: string;
+    type: 'followers' | 'following';
+  }
 };
