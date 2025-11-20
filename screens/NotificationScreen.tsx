@@ -8,11 +8,11 @@ import {
   Image,
   TouchableOpacity,
   ActivityIndicator,
-  
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../ThemeContext';
 import { useFocusEffect } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
@@ -34,6 +34,7 @@ const timeAgo = (dateString: string): string => {
 
 export default function NotificationScreen() {
   const { colors } = useTheme();
+  const navigation = useNavigation<any>();
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -65,7 +66,7 @@ export default function NotificationScreen() {
     }
   }, []);
 
-    useFocusEffect(
+  useFocusEffect(
     useCallback(() => {
       fetchNotifications();   // ← only this, NO polling
     }, [fetchNotifications])
@@ -102,7 +103,18 @@ export default function NotificationScreen() {
           styles.item,
           { backgroundColor: item.read ? 'transparent' : 'rgba(99, 102, 241, 0.12)' },
         ]}
-        onPress={() => markAsRead(item.objectId)}
+        onPress={() => {
+          markAsRead(item.objectId);
+          if (profile) {
+            navigation.navigate('UserProfile', {
+              userId: profile.auth0Id,
+              username: profile.username,
+              profilePicUrl: profile.profilePicUrl,
+              bio: profile.bio,
+              height: profile.height,
+            });
+          }
+        }}
       >
         <Image source={{ uri: picUrl }} style={styles.avatar} />
         <View style={styles.textContainer}>

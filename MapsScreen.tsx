@@ -12,6 +12,7 @@ import {
   Modal,
   FlatList,
 } from 'react-native';
+import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Geolocation from '@react-native-community/geolocation';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
@@ -19,6 +20,7 @@ import EncryptedStorage from 'react-native-encrypted-storage';
 import { jwtDecode } from 'jwt-decode';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import type { NavigationProp } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import type { RootStackParamList } from './types/navigation';
 import LocationToggle from './screens/LocationToggleScreen';
 
@@ -61,19 +63,68 @@ export default function MapsScreen({ navigation }: MapsScreenProps) {
   const [location, setLocation] = useState<{ lat: number; lon: number } | null>(null);
   const [profilePicUrl, setProfilePicUrl] = useState<string | null>(null);
   const [myObjectId, setMyObjectId] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [radiusMeters, setRadiusMeters] = useState<number>(20);
   const [nearbyUsers, setNearbyUsers] = useState<UserMarker[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [showPreciseModal, setShowPreciseModal] = useState(false);
   const [preciseFilter, setPreciseFilter] = useState(10);
   const mapRef = useRef<MapView>(null);
+
+  const fetchUnreadCount = useCallback(async () => {
+    if (!currentUserId) return;
+    const lastSeenStr = await AsyncStorage.getItem(`lastInboxSeen_${currentUserId}`);
+    let where: any = { receiverId: currentUserId };
+    if (lastSeenStr) {
+      where.createdAt = { $gt: { __type: 'Date', iso: lastSeenStr } };
+    }
+    const whereStr = encodeURIComponent(JSON.stringify(where));
+    try {
+      const res = await fetch(`${API_URL}/classes/Message?where=${whereStr}&limit=1000`, {
+        method: 'GET',
+        headers: {
+          'X-Parse-Application-Id': APP_ID,
+          'X-Parse-Master-Key': MASTER_KEY,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const results = data.results || [];
+      const uniqueSenders = new Set(results.map((m: any) => m.senderId));
+      setUnreadCount(uniqueSenders.size);
+    } catch (e) {
+      console.warn('Unread count fetch error', e);
+    }
+  }, [currentUserId]);
+
+ 
+
+  useEffect(() => {
+  if (!currentUserId) return;
+
+  // Fetch immediately on mount
+  fetchUnreadCount();
+
+  const subscription = AppState.addEventListener('change', (nextState) => {
+    if (nextState === 'active') {
+      fetchUnreadCount(); // Only when app is truly opened
+    }
+  });
+
+  return () => subscription.remove();
+}, [currentUserId, fetchUnreadCount]);
 
   useEffect(() => {
     const init = async () => {
       const token = await EncryptedStorage.getItem('idToken');
       if (token) {
         const decoded: Auth0IdToken = jwtDecode(token);
-        const snap = await queryUser(decoded.sub);
+        const auth0Id = decoded.sub;
+        await AsyncStorage.setItem('auth0Id', auth0Id);
+        setCurrentUserId(auth0Id);
+        const snap = await queryUser(auth0Id);
         setProfilePicUrl(snap?.profilePicUrl ?? decoded.picture ?? null);
         setMyObjectId(snap?.objectId || null);
       }
@@ -184,9 +235,22 @@ export default function MapsScreen({ navigation }: MapsScreenProps) {
               </TouchableOpacity>
             ))}
           </View>
-          <TouchableOpacity onPress={() => navigation.navigate('Inbox')} style={{ padding: 8, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.15)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }}>
-            <Ionicons name="mail-outline" size={20} color="#fff" />
-          </TouchableOpacity>
+          <TouchableOpacity 
+  onPress={() => {
+    // This clears the badge immediately when user opens Inbox
+    setUnreadCount(0);
+    navigation.navigate('Inbox');
+  }} 
+  style={[styles.inboxButton, { position: 'relative' }]}>
+  <Ionicons name="mail-outline" size={20} color="#fff" />
+  {unreadCount > 0 && (
+    <View style={styles.badge}>
+      <Text style={styles.badgeText}>
+        {unreadCount > 99 ? '99+' : unreadCount.toString()}
+      </Text>
+    </View>
+  )}
+</TouchableOpacity>
         </View>
       </View>
 
@@ -251,6 +315,9 @@ const styles = StyleSheet.create({
   defaultMarker: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#555', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#fff' },
   preciseButton: { position: 'absolute', bottom: 30, right: 16, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,122,255,0.9)', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 25, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 8, gap: 8 },
   preciseText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  inboxButton: { padding: 8, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.15)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+  badge: { position: 'absolute', top: -4, right: -4, backgroundColor: '#FF3B30', borderRadius: 9, minWidth: 18, height: 18, justifyContent: 'center', alignItems: 'center' },
+  badgeText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
   loadingOverlay: { position: 'absolute', top: '45%', alignSelf: 'center', backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, flexDirection: 'row', alignItems: 'center', zIndex: 999 },
   loadingText: { color: '#fff', marginLeft: 8, fontSize: 13, fontWeight: '500' },
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
@@ -265,4 +332,6 @@ const styles = StyleSheet.create({
   userName: { flex: 1, color: '#fff', fontSize: 16 },
   userDistance: { color: '#888', fontSize: 13 },
   emptyListText: { color: '#888', textAlign: 'center', marginTop: 20, fontSize: 14 },
-});
+});  
+
+

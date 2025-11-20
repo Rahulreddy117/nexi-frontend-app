@@ -30,6 +30,7 @@ import SettingsScreen from './SettingsScreen';
 import type { RootStackParamList } from './types/navigation';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { ThemeProvider, useTheme } from './ThemeContext';
+import PostFeedScreen from './screens/PostFeedScreen';
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
 const MASTER_KEY = 'myMasterKey';
@@ -114,6 +115,8 @@ function BottomTabsNavigator({ profilePicUrl }: { profilePicUrl?: string | null 
         tabBarShowLabel: false,
       }}
     >
+
+      
       <Tab.Screen
         name="Maps"
         component={MapsScreen}
@@ -123,6 +126,15 @@ function BottomTabsNavigator({ profilePicUrl }: { profilePicUrl?: string | null 
           ),
         }}
       />
+      <Tab.Screen
+  name="PostFeed"
+  component={PostFeedScreen}
+  options={{
+    tabBarIcon: ({ size }) => (
+      <Ionicons name="play-outline" size={size} color={colors.iconColor} />
+    ),
+  }}
+/>
       <Tab.Screen
         name="Notifications"
         component={NotificationScreen}
@@ -168,6 +180,8 @@ function BottomTabsNavigator({ profilePicUrl }: { profilePicUrl?: string | null 
             ),
         }}
       >
+
+        
         {() => <ViewProfileScreen />}
       </Tab.Screen>
     </Tab.Navigator>

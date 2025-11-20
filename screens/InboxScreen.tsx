@@ -1,4 +1,3 @@
-// src/screens/InboxScreen.tsx
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -20,11 +19,12 @@ const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
 const MASTER_KEY = 'myMasterKey';
 
+const UNREAD_DOT_SIZE = 10; // New constant for dot size
+
 // -----------------------------------------------------------------
-//  PROFILE CACHE HELPERS (12-hour cache)
+//  PROFILE CACHE HELPERS (3-day cache)
 // -----------------------------------------------------------------
 const PROFILE_PREFIX = '@profile_';
-
 const CACHE_TTL_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 
 interface CachedProfile {
@@ -58,7 +58,7 @@ const setCachedProfile = async (userId: string, profile: any) => {
 };
 
 // -----------------------------------------------------------------
-//  MAIN SCREEN
+//  MAIN SCREEN
 // -----------------------------------------------------------------
 interface Conversation {
   partnerId: string;
@@ -66,6 +66,7 @@ interface Conversation {
   partnerPic?: string;
   lastMessage: string;
   lastMessageAt: string;
+  isUnread: boolean; // NEW: Track unread status
 }
 
 export default function InboxScreen() {
@@ -88,82 +89,81 @@ export default function InboxScreen() {
   }, []);
 
   // -------------------------------------------------------------
-  // 2. FETCH + CACHE profile (12hr cache, bypass for self-update)
+  // 2. FETCH + CACHE profile (3-day cache, bypass for self-update)
   // -------------------------------------------------------------
   const fetchProfile = async (auth0Id: string): Promise<CachedProfile | null> => {
-  const cached = await getCachedProfile(auth0Id);
+    const cached = await getCachedProfile(auth0Id);
 
-  // === SPECIAL CASE: Current user (force refresh if flag set) ===
-  if (auth0Id === currentUserId) {
-    const lastUpdateStr = await AsyncStorage.getItem('profile_updated_at');
-    if (lastUpdateStr && cached) {
-      const updateTime = new Date(lastUpdateStr).getTime();
-      const cacheTime = new Date(cached._cachedAt).getTime();
-      if (updateTime > cacheTime) {
-        // Force fetch
-      } else {
-        const ageMs = Date.now() - cacheTime;
-        if (ageMs < CACHE_TTL_MS) return cached;
+    // === SPECIAL CASE: Current user (force refresh if flag set) ===
+    if (auth0Id === currentUserId) {
+      const lastUpdateStr = await AsyncStorage.getItem('profile_updated_at');
+      if (lastUpdateStr && cached) {
+        const updateTime = new Date(lastUpdateStr).getTime();
+        const cacheTime = new Date(cached._cachedAt).getTime();
+        if (updateTime > cacheTime) {
+          // Force fetch
+        } else {
+          const ageMs = Date.now() - cacheTime;
+          if (ageMs < CACHE_TTL_MS) return cached;
+        }
       }
     }
-  }
-  // === OTHER USERS: 12-hour cache ===
-  else if (cached) {
-    const ageMs = Date.now() - new Date(cached._cachedAt).getTime();
-    if (ageMs < CACHE_TTL_MS) return cached;
-  }
-
-  // === FETCH FROM SERVER ===
-  const where = { auth0Id };
-  const whereStr = encodeURIComponent(JSON.stringify(where));
-  try {
-    const res = await fetch(
-      `${API_URL}/classes/UserProfile?where=${whereStr}&limit=1`,
-      {
-        headers: {
-          'X-Parse-Application-Id': APP_ID,
-          'X-Parse-Master-Key': MASTER_KEY,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-
-    if (!res.ok) return cached || null;
-
-    const data = await res.json();
-    const profile = data.results?.[0] ?? null;
-
-    if (profile) {
-      const serverUpdatedAt = profile.updatedAt;
-
-      // === ONLY UPDATE CACHE IF DATA CHANGED ===
-      if (cached && cached.updatedAt === serverUpdatedAt) {
-        // No change → just refresh _cachedAt
-        return { ...cached, _cachedAt: new Date().toISOString() };
-      }
-
-      // Data changed → save new version
-      await setCachedProfile(auth0Id, profile);
-
-      // Clear flag for current user
-      if (auth0Id === currentUserId) {
-        await AsyncStorage.removeItem('profile_updated_at');
-        
-      }
-
-      return {
-        username: profile.username || 'Unknown',
-        profilePicUrl: profile.profilePicUrl,
-        updatedAt: serverUpdatedAt,
-        _cachedAt: new Date().toISOString(),
-      };
+    // === OTHER USERS: 3-day cache ===
+    else if (cached) {
+      const ageMs = Date.now() - new Date(cached._cachedAt).getTime();
+      if (ageMs < CACHE_TTL_MS) return cached;
     }
-  } catch (e) {
-    console.warn('Profile fetch error', e);
-  }
 
-  return cached || null;
-};
+    // === FETCH FROM SERVER ===
+    const where = { auth0Id };
+    const whereStr = encodeURIComponent(JSON.stringify(where));
+    try {
+      const res = await fetch(
+        `${API_URL}/classes/UserProfile?where=${whereStr}&limit=1`,
+        {
+          headers: {
+            'X-Parse-Application-Id': APP_ID,
+            'X-Parse-Master-Key': MASTER_KEY,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (!res.ok) return cached || null;
+
+      const data = await res.json();
+      const profile = data.results?.[0] ?? null;
+
+      if (profile) {
+        const serverUpdatedAt = profile.updatedAt;
+
+        // === ONLY UPDATE CACHE IF DATA CHANGED ===
+        if (cached && cached.updatedAt === serverUpdatedAt) {
+          // No change → just refresh _cachedAt
+          return { ...cached, _cachedAt: new Date().toISOString() };
+        }
+
+        // Data changed → save new version
+        await setCachedProfile(auth0Id, profile);
+
+        // Clear flag for current user
+        if (auth0Id === currentUserId) {
+          await AsyncStorage.removeItem('profile_updated_at');
+        }
+
+        return {
+          username: profile.username || 'Unknown',
+          profilePicUrl: profile.profilePicUrl,
+          updatedAt: serverUpdatedAt,
+          _cachedAt: new Date().toISOString(),
+        };
+      }
+    } catch (e) {
+      console.warn('Profile fetch error', e);
+    }
+
+    return cached || null;
+  };
 
   // -------------------------------------------------------------
   // 3. Build inbox
@@ -173,6 +173,12 @@ export default function InboxScreen() {
 
     if (forceRefresh) setRefreshing(true);
     else setLoading(true);
+
+    // Get the time the user last viewed this screen
+    const lastInboxSeenStr = await AsyncStorage.getItem(`lastInboxSeen_${currentUserId}`);
+    const lastInboxSeenTime = lastInboxSeenStr
+      ? new Date(lastInboxSeenStr).getTime()
+      : 0; // If never seen, assume all messages are new
 
     try {
       // Optional: clear all profile caches on force refresh
@@ -207,6 +213,11 @@ export default function InboxScreen() {
         const isMe = msg.senderId === currentUserId;
         const partnerId = isMe ? msg.receiverId : msg.senderId;
 
+        // Message is unread if:
+        // 1. It was NOT sent by the current user.
+        // 2. It was created AFTER the last time the user viewed the inbox.
+        const isMsgUnread = !isMe && new Date(msg.createdAt).getTime() > lastInboxSeenTime;
+
         if (!partnerMap.has(partnerId)) {
           const profile = await fetchProfile(partnerId);
           partnerMap.set(partnerId, {
@@ -215,12 +226,15 @@ export default function InboxScreen() {
             partnerPic: profile?.profilePicUrl,
             lastMessage: msg.text,
             lastMessageAt: msg.createdAt,
+            isUnread: isMsgUnread, // Initial unread status
           });
         } else {
           const existing = partnerMap.get(partnerId)!;
           if (new Date(msg.createdAt) > new Date(existing.lastMessageAt)) {
+            // This is the latest message, update conversation details
             existing.lastMessage = msg.text;
             existing.lastMessageAt = msg.createdAt;
+            existing.isUnread = isMsgUnread; // Update unread status for the latest message
           }
         }
       }
@@ -239,11 +253,16 @@ export default function InboxScreen() {
   }, [currentUserId]);
 
   // -------------------------------------------------------------
-  // 4. Refetch on focus
+  // 4. Refetch on focus (Crucial: sets the `lastInboxSeen` time)
   // -------------------------------------------------------------
   useFocusEffect(
     useCallback(() => {
-      if (currentUserId) fetchInbox();
+      if (currentUserId) {
+        fetchInbox().then(() => {
+          // Record the time the inbox screen was last fully viewed/refreshed
+          AsyncStorage.setItem(`lastInboxSeen_${currentUserId}`, new Date().toISOString());
+        });
+      }
     }, [currentUserId, fetchInbox])
   );
 
@@ -266,27 +285,46 @@ export default function InboxScreen() {
         })
       }
     >
-      {item.partnerPic ? (
-        <Image source={{ uri: item.partnerPic }} style={styles.avatar} />
-      ) : (
-        <View style={[styles.avatar, { backgroundColor: colors.placeholderBackground }]}>
-          <Ionicons name="person" size={20} color={colors.secondaryText} />
-        </View>
-      )}
+      {/* Avatar Section */}
+      <View style={styles.avatarContainer}> 
+        {item.partnerPic ? (
+          <Image source={{ uri: item.partnerPic }} style={styles.avatar} />
+        ) : (
+          <View style={[styles.avatar, { backgroundColor: colors.placeholderBackground }]}>
+            <Ionicons name="person" size={20} color={colors.secondaryText} />
+          </View>
+        )}
+      </View>
 
+      {/* Info Section (Name and Last Message) */}
       <View style={styles.info}>
         <Text style={[styles.name, { color: colors.text }]}>{item.partnerName}</Text>
-        <Text style={[styles.lastMsg, { color: colors.secondaryText }]} numberOfLines={1}>
+        <Text
+          style={[
+            styles.lastMsg,
+            { color: colors.secondaryText },
+            // Apply bold style if unread
+            item.isUnread && { fontWeight: '700', color: colors.text }, 
+          ]}
+          numberOfLines={1}
+        >
           {item.lastMessage}
         </Text>
       </View>
 
-      <Text style={[styles.time, { color: colors.secondaryText }]}>
-        {new Date(item.lastMessageAt).toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-        })}
-      </Text>
+      {/* Time and Unread Dot Section */}
+      <View style={styles.timeContainer}> 
+        <Text style={[styles.time, { color: colors.secondaryText }]}>
+          {new Date(item.lastMessageAt).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
+        </Text>
+        {/* Render the blue dot on the top right */}
+        {item.isUnread && (
+          <View style={[styles.unreadDot, { backgroundColor: colors.primary }]} />
+        )}
+      </View>
     </TouchableOpacity>
   );
 
@@ -346,6 +384,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     gap: 12,
   },
+  avatarContainer: {
+    // No specific positioning needed here
+  },
   avatar: {
     width: 48,
     height: 48,
@@ -356,7 +397,19 @@ const styles = StyleSheet.create({
   info: { flex: 1 },
   name: { fontSize: 16, fontWeight: '600' },
   lastMsg: { fontSize: 14, marginTop: 2 },
+  timeContainer: {
+    // This container holds both the time and the dot, aligned vertically
+    alignSelf: 'flex-start', // Align to the top of the row
+    alignItems: 'flex-end',  // Align children to the right
+    paddingTop: 4, // Push down slightly to align with the top margin
+    gap: 4, // Space between time and dot
+  },
   time: { fontSize: 12 },
+  unreadDot: {
+    width: UNREAD_DOT_SIZE,
+    height: UNREAD_DOT_SIZE,
+    borderRadius: UNREAD_DOT_SIZE / 2,
+  },
   empty: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
   emptyText: { fontSize: 16, textAlign: 'center' },
 });

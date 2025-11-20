@@ -170,6 +170,22 @@ export default function ViewProfileScreen() {
     navigation.navigate('Settings');
   };
 
+  const handleViewFollowers = () => {
+    if (!userId) return;
+    navigation.navigate('FollowingFollowers', {
+      userAuth0Id: userId,
+      type: 'followers',
+    } as any);
+  };
+
+  const handleViewFollowing = () => {
+    if (!userId) return;
+    navigation.navigate('FollowingFollowers', {
+      userAuth0Id: userId,
+      type: 'following',
+    } as any);
+  };
+
   /* ------------------------------------------------------------------ */
   /*  Themed button component                                           */
   /* ------------------------------------------------------------------ */
@@ -251,9 +267,7 @@ export default function ViewProfileScreen() {
         <View style={styles.followStats}>
           <TouchableOpacity
             style={styles.followStatBtn}
-            onPress={() => {
-              // TODO: navigate to followers list
-            }}
+            onPress={handleViewFollowers}
           >
             <Text style={[styles.followStatText, { color: colors.text }]}>Followers</Text>
             <Text style={[styles.followStatCount, { color: colors.text }]}>{followersCount}</Text>
@@ -261,9 +275,7 @@ export default function ViewProfileScreen() {
 
           <TouchableOpacity
             style={styles.followStatBtn}
-            onPress={() => {
-              // TODO: navigate to following list
-            }}
+            onPress={handleViewFollowing}
           >
             <Text style={[styles.followStatText, { color: colors.text }]}>Following</Text>
             <Text style={[styles.followStatCount, { color: colors.text }]}>{followingCount}</Text>
