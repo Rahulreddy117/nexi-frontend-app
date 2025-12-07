@@ -15,6 +15,7 @@ import {
 import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
 import { io, Socket } from 'socket.io-client';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import type { RootStackParamList } from '../types/navigation';
 import { useTheme } from '../ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -95,15 +96,25 @@ export default function ChatScreen() {
     };
   }, [currentUserId, receiverId]);
 
-  // 3. Add message + SORT by time (oldest → newest)
-  const addMessage = (msg: Message) => {
-    setMessages((prev) => {
-      const updated = [...prev, msg];
-      return updated.sort((a, b) =>
-        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-      );
-    });
-  };
+const addMessage = (msg: any) => {
+  setMessages((prev) => {
+    // Prevent duplicate messages (happens when both users are online)
+    if (prev.some(m => m.objectId === msg.objectId)) {
+      return prev;
+    }
+
+    const newMsg = {
+      ...msg,
+      // Safety net if objectId is missing for any reason
+      objectId: msg.objectId || `temp-${Date.now()}-${Math.random().toString(36)}`,
+    };
+
+    const updated = [...prev, newMsg];
+    return updated.sort((a, b) => 
+      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+  });
+};
 
   // 4. Fetch messages (no order, we sort client-side)
   const fetchMessages = useCallback(async () => {
@@ -150,12 +161,15 @@ export default function ChatScreen() {
     }
   }, [currentUserId, receiverId]);
 
-  // 5. Refetch on focus
-  useFocusEffect(
-    useCallback(() => {
-      if (currentUserId) fetchMessages();
-    }, [currentUserId, fetchMessages])
-  );
+ 
+  // 5. Refetch on focus (only if no messages)
+useFocusEffect(
+  useCallback(() => {
+    if (currentUserId && messages.length === 0) {
+      fetchMessages();
+    }
+  }, [currentUserId, fetchMessages, messages.length])
+);
 
   // 6. Auto-scroll to bottom
   useEffect(() => {
@@ -176,6 +190,15 @@ export default function ChatScreen() {
 
     socket.emit('sendMessage', payload);
     setNewMessage('');
+  };
+
+  // Navigate to User Profile
+  const handleUserProfilePress = () => {
+    navigation.navigate('UserProfile', {
+      userId: receiverId,
+      username: receiverName,
+      profilePicUrl: receiverPic,
+    });
   };
 
   // 8. Render message bubble
@@ -221,15 +244,17 @@ export default function ChatScreen() {
           <Ionicons name="arrow-back" size={28} color={colors.text} />
         </TouchableOpacity>
 
-        {receiverPic ? (
-          <Image source={{ uri: receiverPic }} style={styles.headerPic} />
-        ) : (
-          <View style={[styles.headerPic, { backgroundColor: colors.placeholderBackground }]}>
-            <Ionicons name="person" size={16} color={colors.secondaryText} />
-          </View>
-        )}
+        <TouchableOpacity style={styles.headerUserContainer} onPress={handleUserProfilePress}>
+          {receiverPic ? (
+            <Image source={{ uri: receiverPic }} style={styles.headerPic} />
+          ) : (
+            <View style={[styles.headerPic, { backgroundColor: colors.placeholderBackground }]}>
+              <Ionicons name="person" size={16} color={colors.secondaryText} />
+            </View>
+          )}
 
-        <Text style={[styles.headerName, { color: colors.text }]}>{receiverName}</Text>
+          <Text style={[styles.headerName, { color: colors.text }]}>{receiverName}</Text>
+        </TouchableOpacity>
       </View>
 
       <KeyboardAvoidingView
@@ -238,13 +263,17 @@ export default function ChatScreen() {
         keyboardVerticalOffset={90}
       >
         <FlatList
-          ref={flatListRef}
-          data={messages}
-          renderItem={renderMessage}
-          keyExtractor={(item) => item.objectId}
-          contentContainerStyle={{ padding: 16 }}
-          showsVerticalScrollIndicator={false}
-        />
+  ref={flatListRef}
+  data={messages}
+  renderItem={renderMessage}
+  keyExtractor={(item) => item.objectId || `msg-${item.senderId}-${item.createdAt || Date.now()}`}
+  contentContainerStyle={{ padding: 16 }}
+  showsVerticalScrollIndicator={false}
+  maintainVisibleContentPosition={{
+    minIndexForVisible: 0,
+    autoscrollToTopThreshold: 10,
+  }}
+/>
 
         <View style={[styles.inputContainer, { borderTopColor: colors.border }]}>
           <TextInput
@@ -283,6 +312,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     gap: 12,
   },
+  headerUserContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 12,
+  },
   headerPic: {
     width: 36,
     height: 36,
@@ -290,7 +325,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerName: { fontSize: 18, fontWeight: '600', flex: 1 },
+  headerName: { fontSize: 18, fontWeight: '600' },
   messageBubble: {
     maxWidth: '75%',
     padding: 12,

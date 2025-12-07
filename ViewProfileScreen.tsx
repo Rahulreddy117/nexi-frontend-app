@@ -1,4 +1,4 @@
-// ViewProfileScreen.tsx
+// ViewProfileScreen.tsx - NOW WITH YOUR POSTS GRID + FULLSCREEN MODAL!
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -9,6 +9,9 @@ import {
   ActivityIndicator,
   RefreshControl,
   TouchableOpacity,
+  FlatList,
+  Dimensions,
+  Modal,
 } from 'react-native';
 import { useRoute, useNavigation, RouteProp, NavigationProp } from '@react-navigation/native';
 import EncryptedStorage from 'react-native-encrypted-storage';
@@ -17,9 +20,6 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import type { RootStackParamList } from './types/navigation';
 import { useTheme } from './ThemeContext';
 
-/* ------------------------------------------------------------------ */
-/*  Types                                                             */
-/* ------------------------------------------------------------------ */
 interface Auth0IdToken {
   sub: string;
   name: string;
@@ -31,9 +31,10 @@ interface Auth0IdToken {
 type HomeRouteProp = RouteProp<RootStackParamList, 'Home'>;
 type ViewProfileNavProp = NavigationProp<RootStackParamList>;
 
-/* ------------------------------------------------------------------ */
-/*  Component                                                         */
-/* ------------------------------------------------------------------ */
+const { width } = Dimensions.get('window');
+const numColumns = 3;
+const itemWidth = (width - 40 - (numColumns - 1) * 10) / numColumns; // 40 padding, 10 gap
+
 export default function ViewProfileScreen() {
   const route = useRoute<HomeRouteProp>();
   const navigation = useNavigation<ViewProfileNavProp>();
@@ -49,9 +50,13 @@ export default function ViewProfileScreen() {
   const [userId, setUserId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  /* ------------------------------------------------------------------ */
-  /*  Parse helpers                                                     */
-  /* ------------------------------------------------------------------ */
+  // NEW: Posts state
+  const [posts, setPosts] = useState<string[]>([]);
+  const [postsLoading, setPostsLoading] = useState(true);
+
+  // NEW: Fullscreen modal state
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+
   const API_URL = 'https://nexi-server.onrender.com/parse';
   const APP_ID = 'myAppId';
   const MASTER_KEY = 'myMasterKey';
@@ -62,30 +67,48 @@ export default function ViewProfileScreen() {
     'Content-Type': 'application/json',
   };
 
+  // Fetch UserProfile
   async function queryUser(auth0Id: string): Promise<any | null> {
     const where = { auth0Id };
     const whereStr = encodeURIComponent(JSON.stringify(where));
     const response = await fetch(
       `${API_URL}/classes/UserProfile?where=${whereStr}&limit=1`,
-      {
-        method: 'GET',
-        headers: HEADERS,
-      }
+      { method: 'GET', headers: HEADERS }
     );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Query Error:', response.status, errorText);
-      return null;
-    }
-
+    if (!response.ok) return null;
     const data = await response.json();
     return data.results?.[0] ?? null;
   }
 
-  /* ------------------------------------------------------------------ */
-  /*  Fetch profile (own profile)                                       */
-  /* ------------------------------------------------------------------ */
+  // NEW: Fetch user's posts
+  async function fetchUserPosts(userParseObjectId: string) {
+    try {
+      const where = {
+        user: {
+          __type: 'Pointer',
+          className: 'UserProfile',
+          objectId: userParseObjectId,
+        },
+      };
+      const whereStr = encodeURIComponent(JSON.stringify(where));
+      const response = await fetch(
+        `${API_URL}/classes/Post?where=${whereStr}&order=-createdAt&limit=50`,
+        { method: 'GET', headers: HEADERS }
+      );
+
+      if (!response.ok) throw new Error('Failed to fetch posts');
+
+      const data = await response.json();
+      const imageUrls = data.results.flatMap((post: any) => post.imageUrls || []);
+      setPosts(imageUrls);
+    } catch (err) {
+      console.error('Failed to load posts:', err);
+      setPosts([]);
+    } finally {
+      setPostsLoading(false);
+    }
+  }
+
   const fetchProfile = useCallback(async () => {
     const storedToken = await EncryptedStorage.getItem('idToken');
     if (!storedToken) {
@@ -106,6 +129,9 @@ export default function ViewProfileScreen() {
         setHeight(userSnap.height || null);
         setFollowersCount(userSnap.followersCount ?? 0);
         setFollowingCount(userSnap.followingCount ?? 0);
+
+        // Fetch posts after getting user
+        await fetchUserPosts(userSnap.objectId);
       } else {
         setUsername('No Profile');
       }
@@ -117,14 +143,10 @@ export default function ViewProfileScreen() {
     }
   }, []);
 
-  /* ------------------------------------------------------------------ */
-  /*  Initial load – use params from Home if they exist                 */
-  /* ------------------------------------------------------------------ */
   useEffect(() => {
     const params = (route.params as any) ?? {};
 
     if (params?.userId) {
-      // Params were passed from App → Home → ViewProfile
       setUserId(params.userId);
       setUsername(params.username ?? 'Loading...');
       setBio(params.bio ?? '');
@@ -133,25 +155,33 @@ export default function ViewProfileScreen() {
       setFollowersCount(params.followersCount ?? 0);
       setFollowingCount(params.followingCount ?? 0);
       setLoading(false);
+      // If viewing someone else, don't show posts yet (you can add later)
     } else {
-      // No params → fetch from storage / server
       setLoading(true);
       fetchProfile();
     }
   }, [route.params, fetchProfile]);
 
-  /* ------------------------------------------------------------------ */
-  /*  Pull-to-refresh                                                   */
-  /* ------------------------------------------------------------------ */
+  // Pull to refresh
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await fetchProfile();
     setRefreshing(false);
   }, [fetchProfile]);
 
-  /* ------------------------------------------------------------------ */
-  /*  Navigation handlers                                               */
-  /* ------------------------------------------------------------------ */
+  // Auto-refresh when coming back from upload
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      if (userId) {
+        // Re-fetch posts when returning to profile
+        queryUser(userId).then(user => {
+          if (user?.objectId) fetchUserPosts(user.objectId);
+        });
+      }
+    });
+    return unsubscribe;
+  }, [navigation, userId]);
+
   const handleEditProfile = () => {
     if (!userId) return;
     navigation.navigate('ProfileSetup', {
@@ -166,50 +196,31 @@ export default function ViewProfileScreen() {
     } as any);
   };
 
-  const handleSettings = () => {
-    navigation.navigate('Settings');
+  const handleUploadPost = () => {
+    if (!userId) return;
+    navigation.navigate('UserUploadPost', { auth0Id: userId });
   };
 
+  const handleSettings = () => navigation.navigate('Settings');
   const handleViewFollowers = () => {
     if (!userId) return;
-    navigation.navigate('FollowingFollowers', {
-      userAuth0Id: userId,
-      type: 'followers',
-    } as any);
+    navigation.navigate('FollowingFollowers', { userAuth0Id: userId, type: 'followers' } as any);
   };
-
   const handleViewFollowing = () => {
     if (!userId) return;
-    navigation.navigate('FollowingFollowers', {
-      userAuth0Id: userId,
-      type: 'following',
-    } as any);
+    navigation.navigate('FollowingFollowers', { userAuth0Id: userId, type: 'following' } as any);
   };
 
-  /* ------------------------------------------------------------------ */
-  /*  Themed button component                                           */
-  /* ------------------------------------------------------------------ */
-  const ThemedButton = ({
-    title,
-    onPress,
-  }: {
-    title: string;
-    onPress: () => void;
-  }) => (
+  const ThemedButton = ({ title, onPress }: { title: string; onPress: () => void }) => (
     <TouchableOpacity
       style={[styles.button, { backgroundColor: colors.accent }]}
       onPress={onPress}
       activeOpacity={0.7}
     >
-      <Text style={[styles.buttonText, { color: colors.buttonText }]}>
-        {title}
-      </Text>
+      <Text style={[styles.buttonText, { color: colors.buttonText }]}>{title}</Text>
     </TouchableOpacity>
   );
 
-  /* ------------------------------------------------------------------ */
-  /*  Render                                                            */
-  /* ------------------------------------------------------------------ */
   if (loading) {
     return (
       <View style={[styles.loading, { backgroundColor: colors.background }]}>
@@ -221,7 +232,6 @@ export default function ViewProfileScreen() {
 
   return (
     <View style={[styles.containerWrapper, { backgroundColor: colors.background }]}>
-      {/* Settings gear */}
       <TouchableOpacity style={styles.settingsIcon} onPress={handleSettings}>
         <Ionicons name="settings-outline" size={28} color={colors.iconColor} />
       </TouchableOpacity>
@@ -229,144 +239,161 @@ export default function ViewProfileScreen() {
       <ScrollView
         contentContainerStyle={styles.container}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={[colors.iconColor]}
-            tintColor={colors.iconColor}
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.iconColor]} />
         }
       >
         <Text style={[styles.title, { color: colors.text }]}>Your Profile</Text>
 
         {/* Avatar */}
         {profilePicUrl ? (
-          <Image
-            source={{ uri: profilePicUrl }}
-            style={[styles.avatar, { borderColor: colors.border }]}
-          />
+          <Image source={{ uri: profilePicUrl }} style={[styles.avatar, { borderColor: colors.border }]} />
         ) : (
-          <View
-            style={[
-              styles.avatarPlaceholder,
-              { backgroundColor: colors.placeholderBackground },
-            ]}
-          >
-            <Text
-              style={[
-                styles.placeholderText,
-                { color: colors.placeholderText },
-              ]}
-            >
+          <View style={[styles.avatarPlaceholder, { backgroundColor: colors.placeholderBackground }]}>
+            <Text style={[styles.placeholderText, { color: colors.placeholderText }]}>
               No Profile Picture
             </Text>
           </View>
         )}
 
-        {/* Follow stats – same look as UserProfileScreen */}
+        {/* Follow stats */}
         <View style={styles.followStats}>
-          <TouchableOpacity
-            style={styles.followStatBtn}
-            onPress={handleViewFollowers}
-          >
+          <TouchableOpacity style={styles.followStatBtn} onPress={handleViewFollowers}>
             <Text style={[styles.followStatText, { color: colors.text }]}>Followers</Text>
             <Text style={[styles.followStatCount, { color: colors.text }]}>{followersCount}</Text>
           </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.followStatBtn}
-            onPress={handleViewFollowing}
-          >
+          <TouchableOpacity style={styles.followStatBtn} onPress={handleViewFollowing}>
             <Text style={[styles.followStatText, { color: colors.text }]}>Following</Text>
             <Text style={[styles.followStatCount, { color: colors.text }]}>{followingCount}</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Basic info */}
+        {/* Info */}
         <Text style={[styles.info, { color: colors.text }]}>Username: {username}</Text>
         <Text style={[styles.info, { color: colors.text }]}>Bio: {bio || 'No bio set'}</Text>
         <Text style={[styles.info, { color: colors.text }]}>
           Height: {height ? `${height} cm` : 'Not set'}
         </Text>
 
-        {/* Edit button */}
+        {/* Buttons */}
         <View style={styles.buttonContainer}>
           <ThemedButton title="Edit Profile" onPress={handleEditProfile} />
+          <ThemedButton title="Upload Post" onPress={handleUploadPost} />
         </View>
 
-        <Text style={[styles.info, { color: colors.secondaryText }]}>
-          Feed content goes here (posts, etc.)
-        </Text>
+        {/* Posts Grid Title */}
+        <Text style={[styles.postsTitle, { color: colors.text }]}>Your Posts</Text>
+
+        {/* Posts Grid + Fullscreen Modal */}
+        {postsLoading ? (
+          <ActivityIndicator size="small" color={colors.iconColor} style={{ marginTop: 20 }} />
+        ) : posts.length === 0 ? (
+          <Text style={[styles.noPosts, { color: colors.secondaryText }]}>
+            No posts yet. Upload your first one!
+          </Text>
+        ) : (
+          <>
+            <FlatList
+              data={posts}
+              numColumns={numColumns}
+              keyExtractor={(_, index) => index.toString()}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  onPress={() => setSelectedImage(item)}
+                >
+                  <Image source={{ uri: item }} style={styles.postImage} resizeMode="cover" />
+                </TouchableOpacity>
+              )}
+              columnWrapperStyle={styles.row}
+              scrollEnabled={false}
+            />
+
+            {/* Fullscreen Image Modal – super lightweight */}
+            <Modal
+              visible={!!selectedImage}
+              transparent={true}
+              animationType="fade"
+              onRequestClose={() => setSelectedImage(null)}
+            >
+              <View style={styles.modalBackdrop}>
+                <TouchableOpacity
+                  style={styles.modalCloseArea}
+                  activeOpacity={1}
+                  onPress={() => setSelectedImage(null)}
+                />
+                <Image
+                  source={{ uri: selectedImage! }}
+                  style={styles.fullscreenImage}
+                  resizeMode="contain"
+                />
+                <TouchableOpacity
+                  style={styles.closeButton}
+                  onPress={() => setSelectedImage(null)}
+                >
+                  <Ionicons name="close" size={36} color="white" />
+                </TouchableOpacity>
+              </View>
+            </Modal>
+          </>
+        )}
       </ScrollView>
     </View>
   );
 }
 
-/* ------------------------------------------------------------------ */
-/*  Styles                                                            */
-/* ------------------------------------------------------------------ */
 const styles = StyleSheet.create({
   containerWrapper: { flex: 1 },
-  container: {
-    flexGrow: 1,
-    alignItems: 'center',
-    padding: 20,
-    paddingTop: 60,
-  },
+  container: { alignItems: 'center', padding: 20, paddingTop: 60 },
   title: { fontSize: 20, fontWeight: '600', marginBottom: 12 },
   info: { fontSize: 16, marginVertical: 5, textAlign: 'center' },
+  postsTitle: { fontSize: 18, fontWeight: 'bold', alignSelf: 'flex-start', marginTop: 20, marginBottom: 10 },
 
-  /* Avatar */
-  avatar: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    marginVertical: 12,
-    borderWidth: 2,
-  },
-  avatarPlaceholder: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginVertical: 12,
-  },
+  avatar: { width: 110, height: 110, borderRadius: 55, marginVertical: 12, borderWidth: 2 },
+  avatarPlaceholder: { width: 110, height: 110, borderRadius: 55, justifyContent: 'center', alignItems: 'center', marginVertical: 12 },
   placeholderText: { fontSize: 13 },
 
-  /* Follow stats – copied from UserProfileScreen */
-  followStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    width: '100%',
-    marginVertical: 16,
-  },
-  followStatBtn: {
-    alignItems: 'center',
-    padding: 8,
-  },
-  followStatText: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  followStatCount: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
+  followStats: { flexDirection: 'row', justifyContent: 'space-around', width: '100%', marginVertical: 16 },
+  followStatBtn: { alignItems: 'center', padding: 8 },
+  followStatText: { fontSize: 15, fontWeight: '600' },
+  followStatCount: { fontSize: 18, fontWeight: 'bold' },
 
-  /* Buttons */
   buttonContainer: { marginVertical: 12, width: '100%', gap: 10 },
-  button: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 44,
-  },
+  button: { paddingVertical: 12, paddingHorizontal: 24, borderRadius: 8, alignItems: 'center', minHeight: 44 },
   buttonText: { fontSize: 16, fontWeight: '600' },
 
-  /* Misc */
+  postImage: {
+    width: itemWidth,
+    height: itemWidth,
+    borderRadius: 8,
+    margin: 2,
+  },
+  row: { justifyContent: 'space-between' },
+  noPosts: { fontSize: 16, textAlign: 'center', marginTop: 30, fontStyle: 'italic' },
+
   settingsIcon: { position: 'absolute', top: 20, right: 10, zIndex: 1, padding: 10 },
   loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+
+  // NEW: Modal styles
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullscreenImage: {
+    width: '100%',
+    height: '100%',
+  },
+  modalCloseArea: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 40,
+    right: 20,
+    zIndex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    borderRadius: 25,
+    padding: 8,
+  },
 });

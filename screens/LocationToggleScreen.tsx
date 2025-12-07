@@ -1,5 +1,5 @@
 // components/LocationToggle.tsx
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useEffect, useCallback, useRef,useState } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,8 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeModules } from 'react-native';
-import Geolocation from '@react-native-community/geolocation';   // ← NEW
+import Geolocation from '@react-native-community/geolocation';
+
 
 const { LocationModule } = NativeModules;
 
@@ -24,14 +25,14 @@ const APP_ID = 'myAppId';
 const MASTER_KEY = 'myMasterKey';
 
 interface LocationToggleProps {
-  onToggleChange?: (enabled: boolean) => void;
+  enabled: boolean;
+  onToggle: (enabled: boolean) => void;
 }
 
-export default function LocationToggle({ onToggleChange }: LocationToggleProps) {
-  const [locationSharingEnabled, setLocationSharingEnabled] = useState(false);
+export default function LocationToggle({ enabled, onToggle }: LocationToggleProps) {
   const [isLoadingToggle, setIsLoadingToggle] = useState(false);
   const [hasAllPermissions, setHasAllPermissions] = useState(false);
-  const [isSystemLocationEnabled, setIsSystemLocationEnabled] = useState<boolean | null>(null); // ← NEW
+  const [isSystemLocationEnabled, setIsSystemLocationEnabled] = useState<boolean | null>(null);
 
   const appState = useRef(AppState.currentState);
   const gpsWatcherRef = useRef<any>(null);
@@ -106,15 +107,10 @@ export default function LocationToggle({ onToggleChange }: LocationToggleProps) 
   useEffect(() => {
     const init = async () => {
       await checkPermissions();
-      const saved = await AsyncStorage.getItem('locationSharingEnabled');
-      if (saved === 'true') {
-        setLocationSharingEnabled(true);
-        onToggleChange?.(true);
-      }
       checkSystemLocation();
     };
     init();
-  }, [checkPermissions, checkSystemLocation, onToggleChange]);
+  }, [checkPermissions, checkSystemLocation]);
 
   // ──────────────────────────────────────────────────────────────
   // 6. Re-check when app becomes active
@@ -147,11 +143,10 @@ export default function LocationToggle({ onToggleChange }: LocationToggleProps) 
             setIsSystemLocationEnabled(false);
 
             // If sharing was ON → force stop everything
-            if (locationSharingEnabled) {
+            if (enabled) {
               stopLocationService();
-              setLocationSharingEnabled(false);
+              onToggle(false);
               AsyncStorage.setItem('locationSharingEnabled', 'false');
-              onToggleChange?.(false);
             }
           } else if (!nowOff && isSystemLocationEnabled === false) {
             setIsSystemLocationEnabled(true);
@@ -164,7 +159,7 @@ export default function LocationToggle({ onToggleChange }: LocationToggleProps) 
     return () => {
       if (gpsWatcherRef.current) clearInterval(gpsWatcherRef.current);
     };
-  }, [isSystemLocationEnabled, locationSharingEnabled, onToggleChange]);
+  }, [isSystemLocationEnabled, enabled, onToggle]);
 
   // ──────────────────────────────────────────────────────────────
   // 8. Stop service
@@ -280,7 +275,7 @@ export default function LocationToggle({ onToggleChange }: LocationToggleProps) 
     }
 
     setIsLoadingToggle(true);
-    const willEnable = !locationSharingEnabled;
+    const willEnable = !enabled;
 
     if (willEnable) {
       const success = await startLocationService();
@@ -292,15 +287,14 @@ export default function LocationToggle({ onToggleChange }: LocationToggleProps) 
       await stopLocationService();
     }
 
-    setLocationSharingEnabled(willEnable);
     await AsyncStorage.setItem('locationSharingEnabled', String(willEnable));
-    onToggleChange?.(willEnable);
+    onToggle(willEnable);
     setIsLoadingToggle(false);
   }, [
-    locationSharingEnabled,
+    enabled,
     hasAllPermissions,
     isSystemLocationEnabled,
-    onToggleChange,
+    onToggle,
   ]);
 
   // ──────────────────────────────────────────────────────────────
@@ -318,14 +312,14 @@ export default function LocationToggle({ onToggleChange }: LocationToggleProps) 
   return (
     <View style={styles.toggleContainer}>
       <Text style={styles.toggleLabel}>
-        {locationSharingEnabled ? 'Location ON' : 'Turn on Location'}
+        {enabled ? 'Location ON' : 'Turn on Location'}
       </Text>
       <Switch
         trackColor={{ false: '#555', true: '#00C853' }}
-        thumbColor={locationSharingEnabled ? '#fff' : '#aaa'}
+        thumbColor={enabled ? '#fff' : '#aaa'}
         ios_backgroundColor="#555"
         onValueChange={handleToggle}
-        value={locationSharingEnabled}
+        value={enabled}
         disabled={isLoadingToggle}
       />
       {isLoadingToggle && <ActivityIndicator size="small" color="#fff" style={styles.toggleLoader} />}

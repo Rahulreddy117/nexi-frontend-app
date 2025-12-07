@@ -9,6 +9,9 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   Alert,
+  FlatList,
+  Dimensions,
+  Modal,
 } from 'react-native';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -54,6 +57,13 @@ async function isFollowing(myId: string, otherId: string): Promise<any | null> {
   const data = await res.json();
   return data.results?.[0] ?? null;
 }
+
+// ADD THESE 3 LINES HERE
+const { width } = Dimensions.get('window');
+const numColumns = 3;
+const itemWidth = (width - 40 - (numColumns - 1) * 10) / numColumns;
+
+
 export default function UserProfileScreen() {
   const route = useRoute<UserProfileRouteProp>();
   const navigation = useNavigation<any>();
@@ -81,6 +91,40 @@ export default function UserProfileScreen() {
   const [following, setFollowing] = useState(false);
   const [followObjectId, setFollowObjectId] = useState<string | null>(null);
   const [loadingFollow, setLoadingFollow] = useState(false);
+  // NEW: Posts state
+  const [posts, setPosts] = useState<string[]>([]);
+  const [postsLoading, setPostsLoading] = useState(true);
+  // NEW: Fullscreen modal state
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const { width } = Dimensions.get('window');
+  const numColumns = 3;
+  const itemWidth = (width - 40 - (numColumns - 1) * 10) / numColumns; // 40 padding, 10 gap
+  // NEW: Fetch user's posts
+  async function fetchUserPosts(userParseObjectId: string) {
+    try {
+      const where = {
+        user: {
+          __type: 'Pointer',
+          className: 'UserProfile',
+          objectId: userParseObjectId,
+        },
+      };
+      const whereStr = encodeURIComponent(JSON.stringify(where));
+      const response = await fetch(
+        `${API_URL}/classes/Post?where=${whereStr}&order=-createdAt&limit=50`,
+        { method: 'GET', headers: HEADERS }
+      );
+      if (!response.ok) throw new Error('Failed to fetch posts');
+      const data = await response.json();
+      const imageUrls = data.results.flatMap((post: any) => post.imageUrls || []);
+      setPosts(imageUrls);
+    } catch (err) {
+      console.error('Failed to load posts:', err);
+      setPosts([]);
+    } finally {
+      setPostsLoading(false);
+    }
+  }
   useEffect(() => {
     const loadMyData = async () => {
       const auth0Id = await AsyncStorage.getItem('auth0Id');
@@ -108,6 +152,8 @@ export default function UserProfileScreen() {
           setFollowingCount(userData.followingCount || 0);
           setObjectId(userData.objectId);
           setUserAuth0Id(userData.auth0Id);
+          // Fetch posts after getting user
+          await fetchUserPosts(userData.objectId);
         }
       } catch (err) {
         console.error('Failed to fetch full profile:', err);
@@ -264,11 +310,60 @@ export default function UserProfileScreen() {
             <Text style={styles.messageBtnText}>Message</Text>
           </TouchableOpacity>
         </View>
-        <View style={styles.placeholder}>
+        {/* NEW: Posts Grid Title */}
+        <Text style={[styles.postsTitle, { color: colors.text }]}>Posts</Text>
+        {/* NEW: Posts Grid + Fullscreen Modal */}
+        {postsLoading ? (
+          <ActivityIndicator size="small" color={colors.text} style={{ marginTop: 20 }} />
+        ) : posts.length === 0 ? (
           <Text style={[styles.placeholderText, { color: colors.secondaryText }]}>
-            Posts, photos, and activity will appear here.
+            No posts yet.
           </Text>
-        </View>
+        ) : (
+          <>
+            <FlatList
+              data={posts}
+              numColumns={numColumns}
+              keyExtractor={(_, index) => index.toString()}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  onPress={() => setSelectedImage(item)}
+                >
+                  <Image source={{ uri: item }} style={styles.postImage} resizeMode="cover" />
+                </TouchableOpacity>
+              )}
+              columnWrapperStyle={styles.row}
+              scrollEnabled={false}
+            />
+            {/* NEW: Fullscreen Image Modal – super lightweight */}
+            <Modal
+              visible={!!selectedImage}
+              transparent={true}
+              animationType="fade"
+              onRequestClose={() => setSelectedImage(null)}
+            >
+              <View style={styles.modalBackdrop}>
+                <TouchableOpacity
+                  style={styles.modalCloseArea}
+                  activeOpacity={1}
+                  onPress={() => setSelectedImage(null)}
+                />
+                <Image
+                  source={{ uri: selectedImage! }}
+                  style={styles.fullscreenImage}
+                  resizeMode="contain"
+                />
+                <TouchableOpacity
+                  style={styles.closeButton}
+                  onPress={() => setSelectedImage(null)}
+                >
+                  <Ionicons name="close" size={36} color="white" />
+                </TouchableOpacity>
+              </View>
+            </Modal>
+          </>
+        )}
       </ScrollView>
     </View>
   );
@@ -302,4 +397,36 @@ const styles = StyleSheet.create({
   placeholder: { marginTop: 40, padding: 20, backgroundColor: 'rgba(100,100,100,0.2)', borderRadius: 12 },
   placeholderText: { textAlign: 'center', fontSize: 14 },
   loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  // NEW: Posts styles
+  postsTitle: { fontSize: 18, fontWeight: 'bold', alignSelf: 'flex-start', marginTop: 20, marginBottom: 10 },
+  postImage: {
+    width: itemWidth,
+    height: itemWidth,
+    borderRadius: 8,
+    margin: 2,
+  },
+  row: { justifyContent: 'space-between' },
+  // NEW: Modal styles
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullscreenImage: {
+    width: '100%',
+    height: '100%',
+  },
+  modalCloseArea: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 40,
+    right: 20,
+    zIndex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    borderRadius: 25,
+    padding: 8,
+  },
 });

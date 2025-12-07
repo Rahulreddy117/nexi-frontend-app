@@ -15,7 +15,7 @@ import {
 import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Geolocation from '@react-native-community/geolocation';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker } from 'react-native-maps';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import { jwtDecode } from 'jwt-decode';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -23,6 +23,40 @@ import type { NavigationProp } from '@react-navigation/native';
 import { useFocusEffect } from '@react-navigation/native';
 import type { RootStackParamList } from './types/navigation';
 import LocationToggle from './screens/LocationToggleScreen';
+
+
+const darkMapStyle = [
+  { elementType: "geometry", stylers: [{ color: "#212121" }] },
+  { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#757575" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#212121" }] },
+  {
+    featureType: "administrative",
+    elementType: "geometry",
+    stylers: [{ color: "#757575" }],
+  },
+  {
+    featureType: "road",
+    elementType: "geometry",
+    stylers: [{ color: "#3c3c3c" }],
+  },
+  {
+    featureType: "road",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#9e9e9e" }],
+  },
+  {
+    featureType: "water",
+    elementType: "geometry",
+    stylers: [{ color: "#000000" }],
+  },
+  {
+    featureType: "poi",
+    elementType: "geometry",
+    stylers: [{ color: "#2c2c2c" }],
+  },
+];
+
 
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
@@ -71,6 +105,19 @@ export default function MapsScreen({ navigation }: MapsScreenProps) {
   const [showPreciseModal, setShowPreciseModal] = useState(false);
   const [preciseFilter, setPreciseFilter] = useState(10);
   const mapRef = useRef<MapView>(null);
+
+  // Sync location sharing state from storage on focus
+  useFocusEffect(
+    useCallback(() => {
+      const syncLocationState = async () => {
+        const saved = await AsyncStorage.getItem('locationSharingEnabled');
+        if (saved !== null) {
+          setLocationSharingEnabled(saved === 'true');
+        }
+      };
+      syncLocationState();
+    }, [])
+  );
 
   const fetchUnreadCount = useCallback(async () => {
     if (!currentUserId) return;
@@ -226,7 +273,7 @@ export default function MapsScreen({ navigation }: MapsScreenProps) {
             </TouchableOpacity>
           )}
         </Pressable>
-        <LocationToggle onToggleChange={setLocationSharingEnabled} />
+        <LocationToggle enabled={locationSharingEnabled} onToggle={setLocationSharingEnabled} />
         <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginTop: 4, justifyContent: 'space-between' }}>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             {[5, 10, 20, 40].map(m => (
@@ -256,7 +303,7 @@ export default function MapsScreen({ navigation }: MapsScreenProps) {
 
       {locationSharingEnabled && location ? (
         <>
-          <MapView ref={mapRef} style={styles.map} provider={PROVIDER_GOOGLE} mapType="standard" showsUserLocation showsMyLocationButton={false} initialRegion={{ latitude: location.lat, longitude: location.lon, latitudeDelta: 0.005, longitudeDelta: 0.005 }}>
+          <MapView ref={mapRef} style={styles.map}  mapType="standard" showsUserLocation showsMyLocationButton={false} customMapStyle={darkMapStyle} initialRegion={{ latitude: location.lat, longitude: location.lon, latitudeDelta: 0.005, longitudeDelta: 0.005 }}>
             {nearbyUsers.map(user => (
               <Marker key={user.objectId} coordinate={user.location} title={user.username || 'User'} anchor={{ x: 0.5, y: 0.5 }} onPress={() => navigation.navigate('UserProfile', { objectId: user.objectId, username: user.username || 'User', profilePicUrl: user.profilePicUrl || null, bio: '', height: '' })}>
                 {user.profilePicUrl ? <Image source={{ uri: user.profilePicUrl }} style={styles.profileMarker} /> : <View style={styles.defaultMarker}><Ionicons name="person" size={24} color="#fff" /></View>}
@@ -332,6 +379,4 @@ const styles = StyleSheet.create({
   userName: { flex: 1, color: '#fff', fontSize: 16 },
   userDistance: { color: '#888', fontSize: 13 },
   emptyListText: { color: '#888', textAlign: 'center', marginTop: 20, fontSize: 14 },
-});  
-
-
+});

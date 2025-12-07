@@ -1,4 +1,4 @@
-// types/navigation.ts (Updated: userId Optional in UserProfile)
+// types/navigation.ts
 export type RootStackParamList = {
   Login: undefined;
 
@@ -6,7 +6,6 @@ export type RootStackParamList = {
     userId: string;
     email: string;
     name: string;
-    /** Optional fields that may come from Home when editing */
     username?: string;
     bio?: string;
     profilePicUrl?: string | null;
@@ -21,7 +20,7 @@ export type RootStackParamList = {
     bio: string;
     profilePicUrl: string | null;
     height?: string;
-    gender?: string;        // ← ADDED: now allowed
+    gender?: string;
   };
 
   SearchBar: {
@@ -29,27 +28,77 @@ export type RootStackParamList = {
   };
 
   UserProfile: {
-    userId?: string;        // ← CHANGED: Optional (for auth0Id from Search/Home)
+    userId?: string;
     username: string;
     profilePicUrl?: string | null;
     bio?: string;
     height?: string;
-    gender?: string;  
-    objectId?: string;      // ← For Maps (objectId from Marker)
+    gender?: string;
+    objectId?: string;
   };
 
   Settings: undefined;
-
   Inbox: undefined;
 
   Chat: {
     receiverId: string;
     receiverName: string;
     receiverPic?: string;
-  };   
+  };
 
   FollowingFollowers: {
     userId: string;
     type: 'followers' | 'following';
-  }
+  };
+
+  UserUploadPost: { auth0Id: string };
+
+  // Rooms Flow
+  RoomCreation: undefined;
+  RoomLocation: {
+    roomName: string;
+    roomPhotoUrl: string | null;
+  };
+  RoomUserProfile: {
+    roomId: string;
+    roomName: string;
+  };
+
+  // ADD THIS LINE — This was missing!
+  RoomPostUpload: {
+    roomId: string;
+    roomName: string;
+  };
+  JoinedRooms: {
+    userParseObjectId: string; 
+         // Parse objectId of the current user
+  };
+  PersonalInfo: undefined;
+  
+  // (Optional: you can keep these commented if you plan to re-add map posts later)
+  /*
+  MapPostScreen: {
+    postId: string;
+    imageUrl: string;
+    caption: string;
+    markerPosition: { latitude: number; longitude: number };
+    region?: {
+      latitude: number;
+      longitude: number;
+      latitudeDelta: number;
+      longitudeDelta: number;
+    };
+    locationName?: string;
+    searchQuery?: string;
+    showInFeed: boolean;
+    auth0Id: string;
+  };    
+  
+  MapsUploadPost: {
+    postId: string;
+    imageUrl: string;
+    auth0Id: string;
+    showInFeed: boolean;
+  };
+  */
 };

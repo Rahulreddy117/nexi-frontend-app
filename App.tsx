@@ -31,6 +31,15 @@ import type { RootStackParamList } from './types/navigation';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { ThemeProvider, useTheme } from './ThemeContext';
 import PostFeedScreen from './screens/PostFeedScreen';
+import UserUploadPostScreen from './screens/UserUploadPost';  // ← ADD THIS
+import RoomCreationScreen from './screens/RoomCreation';
+import RoomLocationScreen from './screens/RoomLocationScreen';
+import RoomUserProfile from './rooms/RoomUserProfile';   // correct path
+import JoinedRoomsScreen from './rooms/JoinedRooms';   // or './screens/JoinedRooms' if you saved it there
+// Add this line with your other imports
+import RoomPostUpload from './rooms/RoomPostUpload';   // ← ADD THIS
+
+import PersonalInfo from './screens/PersonalInfo';  // ← ADD THIS LINE
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
 const MASTER_KEY = 'myMasterKey';
@@ -123,7 +132,8 @@ function BottomTabsNavigator({ profilePicUrl }: { profilePicUrl?: string | null 
         options={{
           tabBarIcon: ({ size }) => (
             < Ionicons name="location-outline" size={size} color={colors.iconColor} />
-          ),
+          ),    
+          lazy: false,
         }}
       />
       <Tab.Screen
@@ -133,6 +143,7 @@ function BottomTabsNavigator({ profilePicUrl }: { profilePicUrl?: string | null 
     tabBarIcon: ({ size }) => (
       <Ionicons name="play-outline" size={size} color={colors.iconColor} />
     ),
+    lazy: false,
   }}
 />
       <Tab.Screen
@@ -259,6 +270,13 @@ export default function App() {
           <Stack.Screen name="Inbox" component={InboxScreen} />
           <Stack.Screen name="Settings" component={SettingsScreen} />
           <Stack.Screen name="SearchBar" component={SearchBarScreen} />
+          <Stack.Screen name="UserUploadPost" component={UserUploadPostScreen} />
+          <Stack.Screen name="RoomCreation" component={RoomCreationScreen} />
+          <Stack.Screen name="RoomLocation" component={RoomLocationScreen} />
+          <Stack.Screen name="RoomUserProfile" component={RoomUserProfile} />
+          <Stack.Screen name="RoomPostUpload" component={RoomPostUpload} />
+          <Stack.Screen name="JoinedRooms" component={JoinedRoomsScreen} />
+          <Stack.Screen name="PersonalInfo" component={PersonalInfo} />
         </Stack.Navigator>
       </NavigationContainer>
     </ThemeProvider>

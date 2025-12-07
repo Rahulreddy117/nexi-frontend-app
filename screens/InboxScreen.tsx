@@ -255,15 +255,21 @@ export default function InboxScreen() {
   // -------------------------------------------------------------
   // 4. Refetch on focus (Crucial: sets the `lastInboxSeen` time)
   // -------------------------------------------------------------
+    // Smart focus: only refetch inbox if it's empty (prevents refetch when coming back from Chat)
   useFocusEffect(
     useCallback(() => {
       if (currentUserId) {
-        fetchInbox().then(() => {
-          // Record the time the inbox screen was last fully viewed/refreshed
+        if (conversations.length === 0) {
+          // First time or truly empty → fetch
+          fetchInbox().then(() => {
+            AsyncStorage.setItem(`lastInboxSeen_${currentUserId}`, new Date().toISOString());
+          });
+        } else {
+          // Just came back from Chat/UserProfile → update "seen" time only (for unread dots)
           AsyncStorage.setItem(`lastInboxSeen_${currentUserId}`, new Date().toISOString());
-        });
+        }
       }
-    }, [currentUserId, fetchInbox])
+    }, [currentUserId, fetchInbox, conversations.length])
   );
 
   // -------------------------------------------------------------

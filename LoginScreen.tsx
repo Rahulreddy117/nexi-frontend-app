@@ -125,7 +125,11 @@ export default function LoginScreen() {
       // Save Parse objectId
       await AsyncStorage.setItem('parseObjectId', userSnap.objectId);
       console.log('Saved parseObjectId:', userSnap.objectId);
+      
 
+      await AsyncStorage.setItem('currentUserId', userSnap.objectId);  // ← USE objectId, NOT auth0Id
+
+      
       // NEW: Redirect new users to ProfileSetup
       if (isNewUser) {
         navigation.replace('ProfileSetup', {
