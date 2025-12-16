@@ -1,30 +1,25 @@
-// screens/PostFeedScreen.tsx (Custom clustering without external library)
-import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+// screens/PostFeedScreen.tsx
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
-  StyleSheet,
   Text,
-  Image,
-  TouchableOpacity,
+  StyleSheet,
   StatusBar,
   ActivityIndicator,
-  Dimensions,
-  Modal,
-  ScrollView,
-  Pressable,
+  TouchableOpacity,
+  Image,
 } from 'react-native';
+import { Region, Marker } from 'react-native-maps';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Geolocation from '@react-native-community/geolocation';
-import MapView, { Marker, Region } from 'react-native-maps';
-import Ionicons from 'react-native-vector-icons/Ionicons';
-import { useFocusEffect } from '@react-navigation/native';
-import { useTheme } from '../ThemeContext';
-import LocationToggle from './LocationToggleScreen';
+import MapView from 'react-native-maps';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { RootStackParamList } from '../types/navigation';
-
-
+import { useTheme } from '../ThemeContext';
+import LocationToggle from '../screens/LocationToggleScreen';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-native-responsive-screen';
 
 const darkMapStyle = [
   { elementType: "geometry", stylers: [{ color: "#212121" }] },
@@ -58,40 +53,85 @@ const darkMapStyle = [
   },
 ];
 
-
-
-const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
 const MASTER_KEY = 'myMasterKey';
 
-interface RoomMarker {
-  objectId: string;
-  name?: string;
-  photoUrl?: string;
-  location: { latitude: number; longitude: number };
-}
-
-interface ClusterMarker {
-  id: string;
-  coordinate: { latitude: number; longitude: number };
-  rooms: RoomMarker[];
-  count: number;
-}
-
-type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
-
 export default function PostFeedScreen() {
   const { colors } = useTheme();
-  const navigation = useNavigation<NavigationProp>();
+  const navigation = useNavigation<any>();
+  const mapRef = useRef<MapView>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const watchIdRef = useRef<number | null>(null);
+  const isMounted = useRef(true);
   const [locationSharingEnabled, setLocationSharingEnabled] = useState(false);
   const [location, setLocation] = useState<{ lat: number; lon: number } | null>(null);
-  const [nearbyRooms, setNearbyRooms] = useState<RoomMarker[]>([]);
   const [mapRegion, setMapRegion] = useState<Region | null>(null);
-  const [clusterModalVisible, setClusterModalVisible] = useState(false);
-  const [selectedClusterRooms, setSelectedClusterRooms] = useState<RoomMarker[]>([]);
-  const mapRef = useRef<MapView>(null);
-  const fetchTimeoutRef = useRef<any>(null);
+  const [rooms, setRooms] = useState<any[]>([]);
+  const isFocused = useIsFocused();
+
+  const metersToRadians = (m: number) => m / 6371000;
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      if (watchIdRef.current) Geolocation.clearWatch(watchIdRef.current);
+    };
+  }, []);
+
+  // Fetch rooms in viewport from Parse
+  const fetchRoomsInViewport = useCallback(async (centerLat: number, centerLon: number, radiusMeters: number = 10000) => {
+    if (!isFocused || !isMounted.current) return;
+    try {
+      const where = {
+        location: {
+          $nearSphere: { __type: 'GeoPoint', latitude: centerLat, longitude: centerLon },
+          $maxDistance: metersToRadians(radiusMeters),
+        },
+      };
+
+      const url = `${API_URL}/classes/Room?where=${encodeURIComponent(JSON.stringify(where))}&limit=40&keys=name,photoUrl,location`;
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'X-Parse-Application-Id': APP_ID,
+          'X-Parse-Master-Key': MASTER_KEY,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!res.ok) throw new Error('Failed to fetch rooms');
+      const json = await res.json();
+
+      const validRooms = (json.results || [])
+        .filter((r: any) => 
+          r.objectId &&
+          r.location && 
+          typeof r.location.latitude === 'number' && 
+          typeof r.location.longitude === 'number'
+        )
+        .map((r: any) => ({
+          objectId: r.objectId,
+          name: r.name || 'Unnamed Room',
+          photoUrl: r.photoUrl,
+          location: { 
+            latitude: r.location.latitude, 
+            longitude: r.location.longitude 
+          },
+        }));
+
+      if (isMounted.current && isFocused) {
+        setRooms(validRooms);
+      }
+    } catch (e) {
+      console.error('Error fetching rooms:', e);
+      if (isMounted.current && isFocused) {
+        setRooms([]);
+      }
+    }
+  }, [isFocused]);
 
   // Sync location sharing state from storage on focus
   useFocusEffect(
@@ -106,256 +146,163 @@ export default function PostFeedScreen() {
     }, [])
   );
 
+  // Refetch every time screen focuses
+  useFocusEffect(
+    useCallback(() => {
+      if (locationSharingEnabled && location && isFocused) {
+        fetchRoomsInViewport(location.lat, location.lon, 10000);
+      }
+      
+      if (locationSharingEnabled && location) {
+        watchIdRef.current = Geolocation.watchPosition(
+          pos => {
+            if (!isMounted.current || !isFocused) return;
+            const { latitude, longitude } = pos.coords;
+            setLocation({ lat: latitude, lon: longitude });
+          },
+          err => console.error('Geolocation watch error:', err),
+          { enableHighAccuracy: true, distanceFilter: 10, interval: 3000, fastestInterval: 2000 }
+        );
+      }
+      return () => {
+        if (watchIdRef.current) {
+          Geolocation.clearWatch(watchIdRef.current);
+          watchIdRef.current = null;
+        }
+      };
+    }, [locationSharingEnabled, location, fetchRoomsInViewport, isFocused])
+  );
+
   useEffect(() => {
     if (!locationSharingEnabled) {
       setLocation(null);
-      setNearbyRooms([]);
-      if (fetchTimeoutRef.current) {
-        clearTimeout(fetchTimeoutRef.current);
-        fetchTimeoutRef.current = null;
+      setMapRegion(null);
+      setRooms([]);
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      if (watchIdRef.current) {
+        Geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
       }
       return;
     }
 
     Geolocation.getCurrentPosition(
       pos => {
+        if (!isMounted.current) return;
         const { latitude, longitude } = pos.coords;
         setLocation({ lat: latitude, lon: longitude });
+        const initialRegion: Region = {
+          latitude,
+          longitude,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        };
+        setMapRegion(initialRegion);
         if (mapRef.current) {
-          mapRef.current.animateCamera({ center: { latitude, longitude }, zoom: 15 });
+          mapRef.current.animateToRegion(initialRegion, 1000);
+        }
+        if (isFocused) {
+          fetchRoomsInViewport(latitude, longitude, 10000);
         }
       },
-      err => console.log('Geolocation init error', err),
+      err => {
+        console.error('Geolocation init error:', err);
+        const fallbackLat = 37.7749;
+        const fallbackLon = -122.4194;
+        if (!isMounted.current) return;
+        setLocation({ lat: fallbackLat, lon: fallbackLon });
+        const initialRegion: Region = {
+          latitude: fallbackLat,
+          longitude: fallbackLon,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        };
+        setMapRegion(initialRegion);
+        if (mapRef.current) {
+          mapRef.current.animateToRegion(initialRegion, 1000);
+        }
+        if (isFocused) {
+          fetchRoomsInViewport(fallbackLat, fallbackLon, 10000);
+        }
+      },
       { enableHighAccuracy: false, timeout: 5000 }
     );
 
-    let first = true;
-    const watchId = Geolocation.watchPosition(
-      pos => {
-        const { latitude, longitude } = pos.coords;
-        setLocation({ lat: latitude, lon: longitude });
-        if (first && mapRef.current) {
-          mapRef.current.animateCamera({ center: { latitude, longitude }, zoom: 15 });
-          first = false;
-        }
-      },
-      err => console.log('Geolocation watch error', err),
-      { enableHighAccuracy: true, distanceFilter: 1, interval: 2000, fastestInterval: 1000 }
-    );
-
-    return () => Geolocation.clearWatch(watchId);
-  }, [locationSharingEnabled]);
-
-  const metersToRadians = (m: number) => m / 6371000;
-
-  const fetchRoomsInViewport = useCallback(async (centerLat: number, centerLon: number, radiusMeters: number = 10000) => {
-    try {
-      const where = {
-        location: {
-          $nearSphere: { __type: 'GeoPoint', latitude: centerLat, longitude: centerLon },
-          $maxDistance: metersToRadians(radiusMeters),
-        },
-      };
-
-      const res = await fetch(
-        `${API_URL}/classes/Room?where=${encodeURIComponent(JSON.stringify(where))}&limit=40&keys=name,photoUrl,location`,
-        {
-          method: 'GET',
-          headers: {
-            'X-Parse-Application-Id': APP_ID,
-            'X-Parse-Master-Key': MASTER_KEY,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (!res.ok) return;
-
-      const data = await res.json();
-      const rooms = (data.results || [])
-        .filter((r: any) => r.location && typeof r.location.latitude === 'number' && typeof r.location.longitude === 'number')
-        .map((r: any) => ({
-          objectId: r.objectId,
-          name: r.name,
-          photoUrl: r.photoUrl,
-          location: { latitude: r.location.latitude, longitude: r.location.longitude },
-        }));
-
-      setNearbyRooms(rooms);
-    } catch (err) {
-      console.error('Fetch rooms error:', err);
-    }
-  }, []);
+    return () => {
+      if (watchIdRef.current) {
+        Geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
+  }, [locationSharingEnabled, fetchRoomsInViewport, isFocused]);
 
   const handleRegionChangeComplete = useCallback((region: Region) => {
+    if (!isMounted.current || !isFocused) return;
     setMapRegion(region);
     const { latitude, longitude, latitudeDelta } = region;
     const radius = latitudeDelta * 111000 / 2;
 
-    if (fetchTimeoutRef.current) {
-      clearTimeout(fetchTimeoutRef.current);
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
     }
 
-    fetchTimeoutRef.current = setTimeout(() => {
+    timeoutRef.current = setTimeout(() => {
+      if (!isMounted.current || !isFocused) return;
       fetchRoomsInViewport(latitude, longitude, radius * 1000);
-    }, 2000);
-  }, [fetchRoomsInViewport]);
+    }, 500);
+  }, [fetchRoomsInViewport, isFocused]);
 
-  useEffect(() => {
-    if (location && locationSharingEnabled) {
-      const initialRegion = {
-        latitude: location.lat,
-        longitude: location.lon,
-        latitudeDelta: 0.01,
-        longitudeDelta: 0.01,
-      };
-      setMapRegion(initialRegion);
-      handleRegionChangeComplete(initialRegion);
-    }
-  }, [location, locationSharingEnabled]);
-
-  // Custom clustering logic
-  const clusteredMarkers = useMemo(() => {
-    if (!mapRegion || nearbyRooms.length === 0) return { clusters: [], singles: [] };
-
-    // Calculate clustering distance based on zoom level (latitudeDelta)
-    // More zoomed out = larger delta = larger cluster distance
-    const clusterDistance = mapRegion.latitudeDelta * 0.15; // Adjust multiplier for sensitivity
-
-    const clusters: ClusterMarker[] = [];
-    const singles: RoomMarker[] = [];
-    const processed = new Set<string>();
-
-    nearbyRooms.forEach((room, i) => {
-      if (processed.has(room.objectId)) return;
-
-      const nearby: RoomMarker[] = [room];
-      processed.add(room.objectId);
-
-      // Find nearby rooms within cluster distance
-      nearbyRooms.forEach((otherRoom, j) => {
-        if (i === j || processed.has(otherRoom.objectId)) return;
-
-        const latDiff = Math.abs(room.location.latitude - otherRoom.location.latitude);
-        const lonDiff = Math.abs(room.location.longitude - otherRoom.location.longitude);
-
-        if (latDiff < clusterDistance && lonDiff < clusterDistance) {
-          nearby.push(otherRoom);
-          processed.add(otherRoom.objectId);
-        }
-      });
-
-      // If 2+ rooms are close, create a cluster; otherwise it's a single marker
-      if (nearby.length >= 2) {
-        const avgLat = nearby.reduce((sum, r) => sum + r.location.latitude, 0) / nearby.length;
-        const avgLon = nearby.reduce((sum, r) => sum + r.location.longitude, 0) / nearby.length;
-
-        clusters.push({
-          id: `cluster-${avgLat}-${avgLon}`,
-          coordinate: { latitude: avgLat, longitude: avgLon },
-          rooms: nearby,
-          count: nearby.length,
-        });
-      } else {
-        singles.push(room);
-      }
+  const handleMarkerPress = useCallback((room: any) => {
+    if (!isMounted.current || !isFocused) return;
+    navigation.navigate('RoomUserProfile', {
+      roomId: room.objectId,
+      roomName: room.name || 'Unnamed Room',
     });
-
-    return { clusters, singles };
-  }, [nearbyRooms, mapRegion]);
-
-  const handleCreateRoom = async () => {
-    const auth0Id = await AsyncStorage.getItem('auth0Id');
-    if (!auth0Id) {
-      console.error('No auth0Id found');
-      return;
-    }
-    navigation.navigate('RoomCreation' as any, { auth0Id });
-  };
-
-  const handleRoomPress = (room: RoomMarker) => {
-    navigation.navigate('RoomUserProfile', { roomId: room.objectId, roomName: room.name || 'Unknown Room' });
-  };
-
-  const handleClusterPress = (cluster: ClusterMarker) => {
-    setSelectedClusterRooms(cluster.rooms);
-    setClusterModalVisible(true);
-  };
+  }, [navigation, isFocused]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar hidden />
+      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+      
       <View style={styles.toggleContainer}>
         <LocationToggle enabled={locationSharingEnabled} onToggle={setLocationSharingEnabled} />
       </View>
 
-      {locationSharingEnabled && location ? (
+      {locationSharingEnabled && mapRegion ? (
         <MapView
           ref={mapRef}
           style={styles.map}
           mapType="standard"
-          customMapStyle={darkMapStyle}        // Forces beautiful dark theme
-          showsUserLocation={false}
-          showsMyLocationButton={false}
-          initialRegion={{ 
-            latitude: location.lat, 
-            longitude: location.lon, 
-            latitudeDelta: 0.01, 
-            longitudeDelta: 0.01 
-          }}
+          customMapStyle={darkMapStyle}
+          showsUserLocation={true}
+          showsMyLocationButton={true}
+          region={mapRegion}
           onRegionChangeComplete={handleRegionChangeComplete}
         >
-          {/* Render clusters */}
-          {clusteredMarkers.clusters.map(cluster => (
-            <Marker
-              key={cluster.id}
-              coordinate={cluster.coordinate}
-              anchor={{ x: 0.5, y: 0.5 }}
-              onPress={() => handleClusterPress(cluster)}
-            >
-              <View style={styles.clusterContainer}>
-                {/* Photo collage - show up to 3 photos */}
-                <View style={styles.photoCollage}>
-                  {cluster.rooms.slice(0, 3).map((room, idx) => (
-                    room.photoUrl ? (
-                      <Image
-                        key={room.objectId}
-                        source={{ uri: room.photoUrl }}
-                        style={[
-                          styles.collagePhoto,
-                          idx === 0 && styles.collagePhoto1,
-                          idx === 1 && styles.collagePhoto2,
-                          idx === 2 && styles.collagePhoto3,
-                        ]}
-                      />
-                    ) : null
-                  ))}
-                </View>
-                
-                {/* Count badge */}
-                <View style={styles.countBadge}>
-                  <Text style={styles.countText}>{cluster.count}</Text>
-                </View>
-              </View>
-            </Marker>
-          ))}
-
-          {/* Render single markers */}
-          {clusteredMarkers.singles.map(room => (
+          {rooms.map((room) => (
             <Marker
               key={room.objectId}
               coordinate={room.location}
-              title={room.name?.substring(0, 30) || 'Room'}
-              anchor={{ x: 0.5, y: 0.5 }}
-              onPress={() => handleRoomPress(room)}
+              title={room.name}
+              onPress={() => handleMarkerPress(room)}
             >
-              <View style={styles.roomMarker}>
-                {room.photoUrl ? (
-                  <Image source={{ uri: room.photoUrl }} style={styles.roomMarkerImage} />
-                ) : (
-                  <Ionicons name="image-outline" size={24} color="#fff" />
-                )}
-              </View>
+              {room.photoUrl ? (
+                <Image
+                  source={{ uri: room.photoUrl }}
+                  style={styles.roomMarkerImage}
+                />
+              ) : (
+                <View style={styles.defaultMarker}>
+                  <Ionicons name="image-outline" size={moderateScale(30)} color="#007AFF" />
+                </View>
+              )}
             </Marker>
           ))}
         </MapView>
@@ -366,233 +313,92 @@ export default function PostFeedScreen() {
         </View>
       ) : (
         <View style={styles.emptyContainer}>
-          <Text style={[styles.emptyText, { color: colors.text }]}>Enable location to see rooms on map</Text>
+          <Text style={[styles.emptyText, { color: colors.text }]}>Enable location to see the map</Text>
         </View>
       )}
 
-      {/* Cluster Modal - Bottom Sheet */}
-      <Modal
-        visible={clusterModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setClusterModalVisible(false)}
+      {/* Floating + Button */}
+      <TouchableOpacity
+        style={[styles.fab, { backgroundColor: colors.primary }]}
+        onPress={() => navigation.navigate('RoomCreation')}
       >
-        <Pressable 
-          style={styles.modalOverlay} 
-          onPress={() => setClusterModalVisible(false)}
-        >
-          <Pressable style={[styles.modalContent, { backgroundColor: colors.background }]}>
-            <View style={styles.modalHandle} />
-            <Text style={[styles.modalTitle, { color: colors.text }]}>
-              {selectedClusterRooms.length} Rooms Nearby
-            </Text>
-            
-            <ScrollView style={styles.roomsList} showsVerticalScrollIndicator={false}>
-              {selectedClusterRooms.map(room => (
-                <TouchableOpacity
-                  key={room.objectId}
-                  style={[styles.roomItem, { borderBottomColor: colors.border || '#e0e0e0' }]}
-                  onPress={() => {
-                    setClusterModalVisible(false);
-                    handleRoomPress(room);
-                  }}
-                >
-                  {room.photoUrl ? (
-                    <Image source={{ uri: room.photoUrl }} style={styles.roomItemImage} />
-                  ) : (
-                    <View style={styles.roomItemImagePlaceholder}>
-                      <Ionicons name="image-outline" size={24} color="#999" />
-                    </View>
-                  )}
-                  <View style={styles.roomItemInfo}>
-                    <Text style={[styles.roomItemName, { color: colors.text }]} numberOfLines={1}>
-                      {room.name || 'Unnamed Room'}
-                    </Text>
-                    <Text style={styles.roomItemDistance}>Tap to view</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={20} color="#999" />
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      {/* + Button */}
-      <TouchableOpacity style={styles.createRoomButton} onPress={handleCreateRoom}>
-        <Ionicons name="add" size={32} color="#fff" />
+        <Ionicons name="add" size={moderateScale(32)} color="#fff" />
       </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  toggleContainer: { position: 'absolute', top: 40, left: 16, right: 16, zIndex: 1000 },
-  map: { flex: 1 },
-  
-  // Single room marker
-  roomMarker: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: 'rgba(0,122,255,0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#fff',
+  container: { 
+    flex: 1 
   },
-  roomMarkerImage: { width: 44, height: 44, borderRadius: 22 },
-
-  // Cluster marker (Snapchat-style)
-  clusterContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: 'rgba(0,122,255,0.9)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#fff',
-    overflow: 'hidden',
+  toggleContainer: { 
+    position: 'absolute', 
+    top: StatusBar.currentHeight ? StatusBar.currentHeight + hp('2%') : hp('6%'),
+    left: wp('4%'), 
+    right: wp('4%'), 
+    zIndex: 1000 
   },
-  photoCollage: {
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
+  map: { 
+    flex: 1 
   },
-  collagePhoto: {
-    position: 'absolute',
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    borderWidth: 1,
-    borderColor: '#fff',
-  },
-  collagePhoto1: {
-    top: 8,
-    left: 8,
-  },
-  collagePhoto2: {
-    top: 8,
-    right: 8,
-  },
-  collagePhoto3: {
-    bottom: 8,
-    left: '50%',
-    marginLeft: -15,
-  },
-  countBadge: {
-    position: 'absolute',
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-    minWidth: 24,
-    alignItems: 'center',
-  },
-  countText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-
-  // Modal (Bottom Sheet)
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingTop: 12,
-    paddingHorizontal: 20,
-    paddingBottom: 40,
-    maxHeight: '70%',
-  },
-  modalHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: '#ccc',
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: 16,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 16,
-  },
-  roomsList: {
-    maxHeight: 400,
-  },
-  roomItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-  },
-  roomItemImage: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    marginRight: 12,
-  },
-  roomItemImagePlaceholder: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#f0f0f0',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  roomItemInfo: {
-    flex: 1,
-  },
-  roomItemName: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  roomItemDistance: {
-    fontSize: 13,
-    color: '#999',
-  },
-
   loadingOverlay: {
     position: 'absolute',
     top: '45%',
     alignSelf: 'center',
     backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
+    paddingHorizontal: wp('4%'),
+    paddingVertical: hp('1.2%'),
+    borderRadius: moderateScale(20),
     flexDirection: 'row',
     alignItems: 'center',
     zIndex: 999,
   },
-  loadingText: { marginLeft: 8, fontSize: 13, fontWeight: '500' },
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
-  emptyText: { fontSize: 16, textAlign: 'center' },
-  createRoomButton: {
+  loadingText: { 
+    marginLeft: wp('2%'), 
+    fontSize: moderateScale(13), 
+    fontWeight: '500' 
+  },
+  emptyContainer: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    paddingHorizontal: wp('10%') 
+  },
+  emptyText: { 
+    fontSize: moderateScale(16), 
+    textAlign: 'center' 
+  },
+  fab: {
     position: 'absolute',
-    bottom: 100,
-    alignSelf: 'center',
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#007AFF',
+    right: wp('5%'),
+    bottom: hp('4%'),
+    width: moderateScale(60),
+    height: moderateScale(60),
+    borderRadius: moderateScale(30),
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    zIndex: 1000,
+  },
+  roomMarkerImage: {
+    width: moderateScale(58),
+    height: moderateScale(58),
+    borderRadius: moderateScale(7),
+    borderWidth: 2,
+    borderColor: 'white',
+  },
+  defaultMarker: {
+    width: moderateScale(40),
+    height: moderateScale(40),
+    borderRadius: moderateScale(20),
+    backgroundColor: 'white',
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    zIndex: 1000,
   },
 });

@@ -1,4 +1,4 @@
-// screens/FollowingFollowersScreen.tsx
+// screens/FollowingFollowersScreen.tsx - RESPONSIVE UI
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -9,8 +9,11 @@ import {
   TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-native-responsive-screen';
 import type { RootStackParamList } from '../types/navigation';
 import { useTheme } from '../ThemeContext';
 
@@ -86,6 +89,7 @@ export default function FollowingFollowersScreen() {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const title = type === 'followers' ? 'Followers' : 'Following';
 
   useEffect(() => {
@@ -111,7 +115,7 @@ export default function FollowingFollowersScreen() {
 
   const renderItem = ({ item }: { item: any }) => (
     <TouchableOpacity
-      style={styles.item}
+      style={[styles.item, { borderBottomColor: colors.border }]}
       onPress={() =>
         navigation.navigate('UserProfile', {
           userId: item.auth0Id,
@@ -121,95 +125,199 @@ export default function FollowingFollowersScreen() {
           height: item.height,
         })
       }
+      activeOpacity={0.7}
     >
-      {item.profilePicUrl ? (
-        <Image source={{ uri: item.profilePicUrl }} style={styles.avatar} />
-      ) : (
-        <View style={styles.avatarPlaceholder}>
-          <Ionicons name="person" size={40} color={colors.secondaryText} />
+      <View style={styles.itemContent}>
+        {item.profilePicUrl ? (
+          <Image source={{ uri: item.profilePicUrl }} style={[styles.avatar, { borderColor: colors.border }]} />
+        ) : (
+          <View style={[styles.avatarPlaceholder, { backgroundColor: colors.placeholderBackground }]}>
+            <Ionicons name="person" size={moderateScale(32)} color={colors.placeholderText} />
+          </View>
+        )}
+        <View style={styles.userInfo}>
+          <Text style={[styles.username, { color: colors.text }]} numberOfLines={1}>
+            {item.username}
+          </Text>
+          {item.bio ? (
+            <Text style={[styles.bio, { color: colors.secondaryText }]} numberOfLines={2}>
+              {item.bio}
+            </Text>
+          ) : null}
         </View>
-      )}
-      <View style={styles.userInfo}>
-        <Text style={[styles.username, { color: colors.text }]}>{item.username}</Text>
-        {item.bio ? <Text style={[styles.bio, { color: colors.secondaryText }]}>{item.bio}</Text> : null}
+        <Ionicons name="chevron-forward" size={moderateScale(20)} color={colors.secondaryText} />
       </View>
     </TouchableOpacity>
   );
 
   if (loading) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.text} />
-      </View>
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['left', 'right', 'bottom']}>
+        <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+          <ActivityIndicator size="large" color={colors.iconColor} />
+          <Text style={[styles.loadingText, { color: colors.text }]}>Loading {type}...</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
-        <View style={styles.placeholderHeader} />
-      </View>
-      {users.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Ionicons name="people-outline" size={64} color={colors.secondaryText} />
-          <Text style={[styles.emptyText, { color: colors.secondaryText }]}>No {type} yet</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['left', 'right', 'bottom']}>
+      <View style={styles.container}>
+        {/* Top Bar */}
+        <View
+          style={[
+            styles.topBar,
+            {
+              backgroundColor: colors.background,
+              borderBottomColor: colors.border,
+              paddingTop: insets.top + hp('0%'),
+            },
+          ]}
+        >
+          <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.backBtn}>
+            <Ionicons name="chevron-back" size={moderateScale(28)} color={colors.iconColor} />
+          </TouchableOpacity>
+          <View style={styles.titleContainer}>
+            <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>
+              {title}
+            </Text>
+          </View>
+          <View style={styles.placeholder} />
         </View>
-      ) : (
-        <FlatList
-          data={users}
-          renderItem={renderItem}
-          keyExtractor={(item) => item.objectId}
-          contentContainerStyle={styles.list}
-          showsVerticalScrollIndicator={false}
-        />
-      )}
-    </View>
+
+        {/* Content */}
+        {users.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <View style={[styles.emptyIconContainer, { backgroundColor: colors.card }]}>
+              <Ionicons name="people-outline" size={moderateScale(64)} color={colors.secondaryText} />
+            </View>
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>No {type} yet</Text>
+            <Text style={[styles.emptySubtitle, { color: colors.secondaryText }]}>
+              {type === 'followers' ? 'No one is following this user yet' : 'This user is not following anyone yet'}
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            data={users}
+            renderItem={renderItem}
+            keyExtractor={(item) => item.objectId}
+            contentContainerStyle={styles.list}
+            showsVerticalScrollIndicator={false}
+          />
+        )}
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+  container: {
+    flex: 1,
   },
-  backBtn: { padding: 4 },
-  title: { flex: 1, textAlign: 'center', fontSize: 18, fontWeight: 'bold' },
-  placeholderHeader: { width: 24, height: 24 }, // Placeholder for alignment
-  list: { padding: 16 },
+  // Top Bar
+  topBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: wp('4%'),
+    paddingBottom: hp('1.8%'),
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  backBtn: {
+    padding: scale(6),
+  },
+  titleContainer: {
+    flex: 1,
+    marginLeft: wp('2%'),
+    marginRight: wp('8%'),
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: moderateScale(19),
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  placeholder: {
+    width: moderateScale(40),
+  },
+  // List
+  list: {
+    paddingHorizontal: wp('4%'),
+    paddingTop: hp('1%'),
+    paddingBottom: hp('2%'),
+  },
+  // List Item
   item: {
+    paddingVertical: hp('1.8%'),
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  itemContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
   },
-  avatar: { width: 60, height: 60, borderRadius: 30, marginRight: 16 },
+  avatar: {
+    width: moderateScale(56),
+    height: moderateScale(56),
+    borderRadius: moderateScale(28),
+    borderWidth: 1.5,
+  },
   avatarPlaceholder: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#333',
+    width: moderateScale(56),
+    height: moderateScale(56),
+    borderRadius: moderateScale(28),
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
   },
-  userInfo: { flex: 1 },
-  username: { fontSize: 16, fontWeight: 'bold' },
-  bio: { fontSize: 14, marginTop: 2 },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  userInfo: {
+    flex: 1,
+    marginLeft: wp('3.5%'),
+    marginRight: wp('2%'),
+  },
+  username: {
+    fontSize: moderateScale(16),
+    fontWeight: '600',
+    letterSpacing: 0.2,
+    marginBottom: hp('0.3%'),
+  },
+  bio: {
+    fontSize: moderateScale(13),
+    lineHeight: moderateScale(18),
+  },
+  // Loading
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: hp('1.5%'),
+  },
+  loadingText: {
+    fontSize: moderateScale(15),
+    fontWeight: '500',
+  },
+  // Empty State
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: wp('10%'),
   },
-  emptyText: { fontSize: 16, marginTop: 8, textAlign: 'center' },
+  emptyIconContainer: {
+    width: moderateScale(120),
+    height: moderateScale(120),
+    borderRadius: moderateScale(60),
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: hp('2%'),
+  },
+  emptyTitle: {
+    fontSize: moderateScale(22),
+    fontWeight: '700',
+    marginBottom: hp('0.8%'),
+  },
+  emptySubtitle: {
+    fontSize: moderateScale(15),
+    textAlign: 'center',
+    lineHeight: moderateScale(22),
+  },
 });

@@ -16,6 +16,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import debounce from 'lodash.debounce';
+import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-native-responsive-screen';
 import { useTheme } from '../ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -188,7 +190,7 @@ export default function SearchBarScreen() {
   const goToProfile = (user: User | RecentSearch) => {
     const { auth0Id, username, profilePicUrl } = user;
     if ('objectId' in user) {
-      saveToRecent(user as User); // Only save if it's a fresh search result
+      saveToRecent(user as User);
     }
     navigation.navigate('UserProfile', {
       userId: auth0Id,
@@ -204,15 +206,24 @@ export default function SearchBarScreen() {
     <TouchableOpacity
       style={[styles.resultRow, { borderBottomColor: colors.border }]}
       onPress={() => goToProfile(item)}
+      activeOpacity={0.7}
     >
       {item.profilePicUrl ? (
         <Image source={{ uri: item.profilePicUrl }} style={styles.avatar} />
       ) : (
         <View style={[styles.avatar, { backgroundColor: colors.placeholderBackground }]}>
-          <Ionicons name="person" size={20} color={colors.secondaryText} />
+          <Ionicons name="person" size={moderateScale(22)} color={colors.secondaryText} />
         </View>
       )}
-      <Text style={[styles.resultUsername, { color: colors.text }]}>{item.username}</Text>
+      <View style={styles.userInfo}>
+        <Text 
+          style={[styles.resultUsername, { color: colors.text }]}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
+          {item.username}
+        </Text>
+      </View>
     </TouchableOpacity>
   );
 
@@ -223,19 +234,32 @@ export default function SearchBarScreen() {
     <TouchableOpacity
       style={[styles.recentRow, { borderBottomColor: colors.border }]}
       onPress={() => goToProfile(item)}
+      activeOpacity={0.7}
     >
       <View style={styles.recentLeft}>
         {item.profilePicUrl ? (
           <Image source={{ uri: item.profilePicUrl }} style={styles.recentAvatar} />
         ) : (
           <View style={[styles.recentAvatar, { backgroundColor: colors.placeholderBackground }]}>
-            <Ionicons name="person" size={18} color={colors.secondaryText} />
+            <Ionicons name="person" size={moderateScale(20)} color={colors.secondaryText} />
           </View>
         )}
-        <Text style={[styles.recentUsername, { color: colors.text }]}>{item.username}</Text>
+        <View style={styles.recentTextContainer}>
+          <Text 
+            style={[styles.recentUsername, { color: colors.text }]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            {item.username}
+          </Text>
+        </View>
       </View>
-      <TouchableOpacity onPress={() => removeRecentSearch(item.auth0Id)}>
-        <Ionicons name="close" size={20} color={colors.secondaryText} />
+      <TouchableOpacity 
+        onPress={() => removeRecentSearch(item.auth0Id)}
+        style={styles.removeBtn}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="close-circle" size={moderateScale(22)} color={colors.secondaryText} />
       </TouchableOpacity>
     </TouchableOpacity>
   );
@@ -249,9 +273,9 @@ export default function SearchBarScreen() {
     return (
       <>
         <View style={styles.recentHeader}>
-          <Text style={[styles.recentTitle, { color: colors.text }]}>Recent</Text>
-          <TouchableOpacity onPress={clearRecentSearches}>
-            <Text style={[styles.clearText, { color: colors.accent }]}>Clear all</Text>
+          <Text style={[styles.recentTitle, { color: colors.text }]}>Recent Searches</Text>
+          <TouchableOpacity onPress={clearRecentSearches} activeOpacity={0.7}>
+            <Text style={[styles.clearText, { color: colors.primary }]}>Clear all</Text>
           </TouchableOpacity>
         </View>
 
@@ -275,13 +299,18 @@ export default function SearchBarScreen() {
       <View style={[
         styles.searchBar,
         {
-          backgroundColor: colors.placeholderBackground,
+          backgroundColor: colors.card,
           borderColor: colors.border,
         }
       ]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
+        <TouchableOpacity 
+          onPress={() => navigation.goBack()} 
+          style={styles.backBtn}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="chevron-back" size={moderateScale(26)} color={colors.text} />
         </TouchableOpacity>
+        <Ionicons name="search" size={moderateScale(20)} color={colors.secondaryText} style={styles.searchIcon} />
         <TextInput
           style={[styles.input, { color: colors.text }]}
           placeholder="Search users..."
@@ -293,8 +322,12 @@ export default function SearchBarScreen() {
           autoCorrect={false}
         />
         {query.length > 0 && (
-          <TouchableOpacity onPress={() => setQuery('')} style={styles.clearBtn}>
-            <Ionicons name="close-circle" size={22} color={colors.secondaryText} />
+          <TouchableOpacity 
+            onPress={() => setQuery('')} 
+            style={styles.clearBtn}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="close-circle" size={moderateScale(22)} color={colors.secondaryText} />
           </TouchableOpacity>
         )}
       </View>
@@ -305,13 +338,30 @@ export default function SearchBarScreen() {
 
         {query.trim() ? (
           loading ? (
-            <ActivityIndicator size="large" color={colors.text} style={{ marginTop: 30 }} />
+            <View style={styles.centerContent}>
+              <ActivityIndicator size="large" color={colors.primary} />
+              <Text style={[styles.loadingText, { color: colors.secondaryText }]}>
+                Searching...
+              </Text>
+            </View>
           ) : error ? (
-            <Text style={[styles.errorText, { color: colors.secondaryText }]}>{error}</Text>
+            <View style={styles.centerContent}>
+              <View style={[styles.iconContainer, { backgroundColor: colors.card }]}>
+                <Ionicons name="alert-circle-outline" size={moderateScale(48)} color={colors.secondaryText} />
+              </View>
+              <Text style={[styles.errorText, { color: colors.text }]}>Oops!</Text>
+              <Text style={[styles.errorSubtext, { color: colors.secondaryText }]}>{error}</Text>
+            </View>
           ) : results.length === 0 ? (
-            <Text style={[styles.emptyText, { color: colors.secondaryText }]}>
-              No users found
-            </Text>
+            <View style={styles.centerContent}>
+              <View style={[styles.iconContainer, { backgroundColor: colors.card }]}>
+                <Ionicons name="search-outline" size={moderateScale(48)} color={colors.secondaryText} />
+              </View>
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>No users found</Text>
+              <Text style={[styles.emptyText, { color: colors.secondaryText }]}>
+                Try searching with a different username
+              </Text>
+            </View>
           ) : (
             <FlatList
               data={results}
@@ -319,12 +369,19 @@ export default function SearchBarScreen() {
               renderItem={renderSearchResult}
               keyboardShouldPersistTaps="handled"
               scrollEnabled={false}
+              contentContainerStyle={styles.resultsListContent}
             />
           )
         ) : recentSearches.length === 0 ? (
-          <Text style={[styles.emptyText, { color: colors.secondaryText, marginTop: 30 }]}>
-            Start typing to search
-          </Text>
+          <View style={styles.centerContent}>
+            <View style={[styles.iconContainer, { backgroundColor: colors.card }]}>
+              <Ionicons name="time-outline" size={moderateScale(48)} color={colors.secondaryText} />
+            </View>
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>No recent searches</Text>
+            <Text style={[styles.emptyText, { color: colors.secondaryText }]}>
+              Start typing to search for users
+            </Text>
+          </View>
         ) : null}
       </View>
     </SafeAreaView>
@@ -332,30 +389,49 @@ export default function SearchBarScreen() {
 }
 
 // ──────────────────────────────────────────────────────
-// STYLES – Instagram-inspired
+// RESPONSIVE STYLES using both size-matters & responsive-screen
 // ──────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
-  },
+  flex: 1,
+  // Remove all paddingTop — SafeAreaView already handles it perfectly
+},
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 25,
-    marginHorizontal: 16,
-    marginTop: 12,
-    height: 50,
-    paddingHorizontal: 12,
-    borderWidth: 1,
+    borderRadius: moderateScale(28),
+    marginHorizontal: wp('4%'),
+    marginTop: hp('1.5%'),
+    height: hp('6.5%'),
+    paddingHorizontal: wp('3%'),
+    borderWidth: StyleSheet.hairlineWidth,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  backBtn: { paddingRight: 8 },
-  input: { flex: 1, fontSize: 16, fontWeight: '500' },
-  clearBtn: { paddingLeft: 8 },
+  backBtn: { 
+    paddingRight: wp('2%'),
+    paddingVertical: hp('1%'),
+  },
+  searchIcon: {
+    marginRight: wp('2%'),
+  },
+  input: { 
+    flex: 1, 
+    fontSize: moderateScale(16), 
+    fontWeight: '500',
+    paddingVertical: hp('1%'),
+  },
+  clearBtn: { 
+    paddingLeft: wp('2%'),
+    paddingVertical: hp('1%'),
+  },
   resultsContainer: {
     flex: 1,
-    paddingHorizontal: 16,
-    marginTop: 12,
+    paddingHorizontal: wp('4%'),
+    marginTop: hp('2%'),
   },
 
   // Recent Header
@@ -363,16 +439,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 4,
+    paddingVertical: hp('1%'),
+    paddingHorizontal: wp('1%'),
+    marginBottom: hp('0.5%'),
   },
   recentTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: moderateScale(17),
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   clearText: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: moderateScale(14),
+    fontWeight: '600',
   },
 
   // Recent Row
@@ -380,51 +458,108 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: hp('1.5%'),
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   recentLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
+    gap: wp('3%'),
   },
   recentAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    marginRight: 12,
+    width: moderateScale(46),
+    height: moderateScale(46),
+    borderRadius: moderateScale(23),
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  recentTextContainer: {
+    flex: 1,
   },
   recentUsername: {
-    fontSize: 15,
-    fontWeight: '500',
+    fontSize: moderateScale(15),
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
+  removeBtn: {
+    padding: scale(4),
   },
 
   // Search Results
+  resultsListContent: {
+    paddingTop: hp('0.5%'),
+  },
   resultRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: hp('1.5%'),
     borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: wp('3%'),
   },
   avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    marginRight: 12,
+    width: moderateScale(52),
+    height: moderateScale(52),
+    borderRadius: moderateScale(26),
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  userInfo: {
+    flex: 1,
   },
   resultUsername: {
-    fontSize: 16,
+    fontSize: moderateScale(16),
     fontWeight: '600',
+    letterSpacing: 0.2,
   },
 
-  // Empty / Error
+  // Center Content (Empty States / Loading)
+  centerContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: hp('8%'),
+    gap: hp('1.5%'),
+  },
+  iconContainer: {
+    width: moderateScale(100),
+    height: moderateScale(100),
+    borderRadius: moderateScale(50),
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: hp('1%'),
+  },
+  loadingText: {
+    fontSize: moderateScale(15),
+    fontWeight: '500',
+  },
+  emptyTitle: {
+    fontSize: moderateScale(20),
+    fontWeight: '700',
+  },
   emptyText: {
+    fontSize: moderateScale(15),
     textAlign: 'center',
-    marginTop: 30,
-    fontSize: 15,
+    lineHeight: moderateScale(22),
+    paddingHorizontal: wp('10%'),
   },
   errorText: {
+    fontSize: moderateScale(20),
+    fontWeight: '700',
+  },
+  errorSubtext: {
+    fontSize: moderateScale(14),
     textAlign: 'center',
-    marginTop: 30,
+    lineHeight: moderateScale(20),
+    paddingHorizontal: wp('10%'),
   },
 });

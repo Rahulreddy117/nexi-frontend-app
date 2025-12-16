@@ -8,11 +8,15 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  ScrollView,
 } from 'react-native';
 import ImagePicker from 'react-native-image-crop-picker';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { RouteProp } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-native-responsive-screen';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../types/navigation';
 import { useTheme } from '../ThemeContext';
 
@@ -71,7 +75,6 @@ export default function UserUploadPostScreen() {
 
   const { auth0Id } = route.params;
   const [image, setImage] = useState<string | null>(null);
-  const [showInFeed, setShowInFeed] = useState<'yes' | 'no'>('yes'); // default Yes
   const [uploading, setUploading] = useState(false);
 
   const pickImage = () => {
@@ -91,7 +94,7 @@ export default function UserUploadPostScreen() {
       });
   };
 
-  const handleNext = async () => {
+  const handleUpload = async () => {
     if (!image) {
       Alert.alert('Error', 'Please select an image first');
       return;
@@ -105,7 +108,7 @@ export default function UserUploadPostScreen() {
       // 2. Get user objectId
       const userObjectId = await getUserParseObjectId(auth0Id);
 
-      // 3. Save post directly (no temp, no location, no caption)
+      // 3. Save post directly (showInFeed defaults to true)
       const postData = {
         imageUrls: [cloudinaryUrl],
         user: {
@@ -113,7 +116,7 @@ export default function UserUploadPostScreen() {
           className: 'UserProfile',
           objectId: userObjectId,
         },
-        showInFeed: showInFeed === 'yes',
+        showInFeed: true,
       };
 
       const response = await fetch(`${API_URL}/classes/Post`, {
@@ -159,105 +162,153 @@ export default function UserUploadPostScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Text style={[styles.title, { color: colors.text }]}>Upload New Post</Text>
-
-      {/* Image Picker */}
-      <TouchableOpacity onPress={pickImage} style={styles.imagePicker}>
-        {image ? (
-          <Image source={{ uri: image }} style={styles.previewImage} />
-        ) : (
-          <View style={[styles.placeholder, { backgroundColor: colors.placeholderBackground }]}>
-            <Ionicons name="camera-outline" size={50} color={colors.secondaryText} />
-            <Text style={[styles.placeholderText, { color: colors.secondaryText }]}>
-              Tap to select photo
-            </Text>
-          </View>
-        )}
-      </TouchableOpacity>
-
-      {/* Radio Buttons */}
-      {image && (
-        <View style={styles.radioContainer}>
-          <Text style={[styles.radioLabel, { color: colors.text }]}>
-            Show in users feed?
-          </Text>
-
-          <TouchableOpacity
-            style={styles.radioOption}
-            onPress={() => setShowInFeed('yes')}
-          >
-            <Ionicons
-              name={showInFeed === 'yes' ? 'radio-button-on' : 'radio-button-off'}
-              size={24}
-              color={colors.accent}
-            />
-            <Text style={[styles.radioText, { color: colors.text }]}>Yes</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.radioOption}
-            onPress={() => setShowInFeed('no')}
-          >
-            <Ionicons
-              name={showInFeed === 'no' ? 'radio-button-on' : 'radio-button-off'}
-              size={24}
-              color={colors.accent}
-            />
-            <Text style={[styles.radioText, { color: colors.text }]}>No</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Next Button */}
-      {image && (
-        <TouchableOpacity
-          style={[styles.nextButton, { backgroundColor: colors.accent }]}
-          onPress={handleNext}
+    <SafeAreaView 
+      style={[styles.container, { backgroundColor: colors.background }]} 
+      edges={['top', 'bottom']}
+    >
+      {/* Header */}
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <TouchableOpacity 
+          onPress={() => navigation.goBack()}
+          style={styles.backButton}
+          activeOpacity={0.7}
           disabled={uploading}
         >
-          {uploading ? (
-            <ActivityIndicator color={colors.buttonText} />
+          <Ionicons name="arrow-back" size={moderateScale(24)} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>
+          Upload New Post
+        </Text>
+        <View style={styles.headerPlaceholder} />
+      </View>
+
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
+        {/* Image Picker */}
+        <TouchableOpacity 
+          onPress={pickImage} 
+          style={[
+            styles.imagePicker, 
+            { borderColor: colors.border }
+          ]}
+          activeOpacity={0.8}
+          disabled={uploading}
+        >
+          {image ? (
+            <Image source={{ uri: image }} style={styles.previewImage} />
           ) : (
-            <Text style={[styles.nextButtonText, { color: colors.buttonText }]}>
-              Upload Post
-            </Text>
+            <View style={[styles.placeholder, { backgroundColor: colors.card }]}>
+              <View style={[styles.iconCircle, { backgroundColor: colors.primary + '20' }]}>
+                <Ionicons 
+                  name="camera-outline" 
+                  size={moderateScale(40)} 
+                  color={colors.primary} 
+                />
+              </View>
+              <Text style={[styles.placeholderText, { color: colors.text }]}>
+                Tap to select photo
+              </Text>
+              <Text style={[styles.placeholderSubtext, { color: colors.secondaryText }]}>
+                Choose from your gallery
+              </Text>
+            </View>
           )}
         </TouchableOpacity>
-      )}
 
-      {/* Cancel */}
-      <TouchableOpacity
-        style={[styles.cancelButton, { borderColor: colors.border }]}
-        onPress={() => navigation.goBack()}
-        disabled={uploading}
-      >
-        <Text style={[styles.cancelText, { color: colors.text }]}>Cancel</Text>
-      </TouchableOpacity>
-    </View>
+        {/* Upload Button */}
+        {image && (
+          <TouchableOpacity
+            style={[
+              styles.uploadButton, 
+              { backgroundColor: colors.primary },
+              uploading && styles.uploadButtonDisabled
+            ]}
+            onPress={handleUpload}
+            disabled={uploading}
+            activeOpacity={0.8}
+          >
+            {uploading ? (
+              <View style={styles.uploadingContainer}>
+                <ActivityIndicator color="#fff" size="small" />
+                <Text style={styles.uploadButtonText}>Uploading...</Text>
+              </View>
+            ) : (
+              <View style={styles.uploadingContainer}>
+                <Ionicons name="cloud-upload-outline" size={moderateScale(22)} color="#fff" />
+                <Text style={styles.uploadButtonText}>Upload Post</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        )}
+
+        {/* Change Photo Button */}
+        {image && !uploading && (
+          <TouchableOpacity
+            style={[styles.changeButton, { borderColor: colors.border }]}
+            onPress={pickImage}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="images-outline" size={moderateScale(20)} color={colors.text} />
+            <Text style={[styles.changeButtonText, { color: colors.text }]}>
+              Change Photo
+            </Text>
+          </TouchableOpacity>
+        )}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
-    alignItems: 'center',
   },
-  title: {
-    fontSize: 24,
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: wp('4%'),
+    paddingVertical: hp('1.5%'),
+    borderBottomWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  backButton: {
+    padding: scale(4),
+    width: moderateScale(40),
+  },
+  headerTitle: {
+    fontSize: moderateScale(18),
     fontWeight: '600',
-    marginBottom: 30,
+    flex: 1,
+    textAlign: 'center',
+  },
+  headerPlaceholder: {
+    width: moderateScale(40),
+  },
+  scrollContent: {
+    padding: wp('5%'),
+    paddingBottom: hp('3%'),
   },
   imagePicker: {
     width: '100%',
-    height: 400,
-    borderRadius: 12,
+    aspectRatio: 1,
+    borderRadius: moderateScale(16),
     overflow: 'hidden',
-    marginBottom: 20,
+    marginBottom: hp('2.5%'),
     borderWidth: 2,
     borderStyle: 'dashed',
-    borderColor: '#ddd',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 4,
   },
   previewImage: {
     width: '100%',
@@ -268,56 +319,64 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: wp('6%'),
+  },
+  iconCircle: {
+    width: moderateScale(80),
+    height: moderateScale(80),
+    borderRadius: moderateScale(40),
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: hp('2%'),
   },
   placeholderText: {
-    marginTop: 10,
-    fontSize: 16,
+    fontSize: moderateScale(17),
+    fontWeight: '600',
+    marginTop: hp('1%'),
     textAlign: 'center',
   },
-
-  // Radio
-  radioContainer: {
-    width: '100%',
-    marginBottom: 30,
-    paddingHorizontal: 10,
+  placeholderSubtext: {
+    fontSize: moderateScale(14),
+    marginTop: hp('0.5%'),
+    textAlign: 'center',
+    fontWeight: '400',
   },
-  radioLabel: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 12,
-    textAlign: 'left',
+  uploadButton: {
+    paddingVertical: hp('2%'),
+    borderRadius: moderateScale(28),
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: hp('1.5%'),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
   },
-  radioOption: {
+  uploadButtonDisabled: {
+    opacity: 0.7,
+  },
+  uploadingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 8,
+    gap: wp('2.5%'),
   },
-  radioText: {
-    fontSize: 16,
-    marginLeft: 10,
-  },
-
-  // Buttons
-  nextButton: {
-    paddingVertical: 16,
-    paddingHorizontal: 50,
-    borderRadius: 30,
-    minWidth: 200,
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  nextButtonText: {
-    fontSize: 18,
+  uploadButtonText: {
+    color: '#fff',
+    fontSize: moderateScale(17),
     fontWeight: '600',
   },
-  cancelButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 40,
-    borderWidth: 1,
-    borderRadius: 25,
+  changeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: hp('1.6%'),
+    borderWidth: 1.5,
+    borderRadius: moderateScale(24),
+    gap: wp('2%'),
   },
-  cancelText: {
-    fontSize: 16,
+  changeButtonText: {
+    fontSize: moderateScale(16),
     fontWeight: '500',
   },
 });

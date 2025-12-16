@@ -1,4 +1,4 @@
-// PersonalInfo.tsx — FIXED VERSION
+// PersonalInfo.tsx — FIXED VERSION with Responsive Design
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -7,10 +7,14 @@ import {
   Image,
   ActivityIndicator,
   Alert,
+  ScrollView,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../ThemeContext';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-native-responsive-screen';
 
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
@@ -72,79 +76,178 @@ export default function PersonalInfo() {
 
   if (loading) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
-      </View>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.secondaryText }]}>
+            Loading profile...
+          </Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Text style={[styles.title, { color: colors.text }]}>Personal Info</Text>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.header}>
+          <Text style={[styles.title, { color: colors.text }]}>Personal Info</Text>
+        </View>
 
-      <View style={styles.avatarContainer}>
-        {user.profilePicUrl ? (
-          <Image source={{ uri: user.profilePicUrl }} style={styles.avatar} />
-        ) : (
-          <View style={[styles.avatarPlaceholder, { backgroundColor: colors.secondaryText }]}>
-            <Ionicons name="person" size={60} color={colors.background} />
+        <View style={styles.avatarContainer}>
+          {user.profilePicUrl ? (
+            <Image source={{ uri: user.profilePicUrl }} style={styles.avatar} />
+          ) : (
+            <View style={[styles.avatarPlaceholder, { backgroundColor: colors.card }]}>
+              <Ionicons name="person" size={moderateScale(56)} color={colors.secondaryText} />
+            </View>
+          )}
+        </View>
+
+        <View style={styles.infoContainer}>
+          <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.infoRow}>
+              <View style={[styles.iconContainer, { backgroundColor: colors.background }]}>
+                <Ionicons name="person-outline" size={moderateScale(22)} color={colors.primary} />
+              </View>
+              <View style={styles.infoTextContainer}>
+                <Text style={[styles.infoLabel, { color: colors.secondaryText }]}>Username</Text>
+                <Text style={[styles.infoValue, { color: colors.text }]}>{user.username}</Text>
+              </View>
+            </View>
           </View>
-        )}
-      </View>
 
-      <View style={styles.infoRow}>
-        <Ionicons name="person-outline" size={24} color={colors.secondaryText} />
-        <Text style={[styles.label, { color: colors.text }]}>{user.username}</Text>
-      </View>
+          <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.infoRow}>
+              <View style={[styles.iconContainer, { backgroundColor: colors.background }]}>
+                <Ionicons name="mail-outline" size={moderateScale(22)} color={colors.primary} />
+              </View>
+              <View style={styles.infoTextContainer}>
+                <Text style={[styles.infoLabel, { color: colors.secondaryText }]}>Email</Text>
+                <Text
+  style={[styles.infoValue, { color: colors.text }]}
+  numberOfLines={2}
+  ellipsizeMode="tail"
+>
+  {user.email}
+</Text>
 
-      <View style={styles.infoRow}>
-        <Ionicons name="mail-outline" size={24} color={colors.secondaryText} />
-        <Text style={[styles.label, { color: colors.text }]}>{user.email}</Text>
-      </View>
+              </View>
+            </View>
+          </View>
 
-      <View style={styles.infoRow}>
-        <Ionicons name="logo-google" size={24} color="#DB4437" />
-        <Text style={[styles.label, { color: colors.text }]}>Google</Text>
-      </View>
-    </View>
+          <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.infoRow}>
+              <View style={[styles.iconContainer, { backgroundColor: '#FEF3F2' }]}>
+                <Ionicons name="logo-google" size={moderateScale(22)} color="#DB4437" />
+              </View>
+              <View style={styles.infoTextContainer}>
+                <Text style={[styles.infoLabel, { color: colors.secondaryText }]}>Connected Account</Text>
+                <Text style={[styles.infoValue, { color: colors.text }]}>Google</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
-// styles stay exactly the same
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: wp('4%'),
+    paddingBottom: hp('3%'),
+  },
+  header: {
     alignItems: 'center',
-    padding: 20,
+    paddingTop: hp('1.8%'),
+    marginBottom: hp('3%'),
   },
   title: {
-    fontSize: 26,
-    fontWeight: '600',
-    marginBottom: 40,
-    marginTop: 30,
+    fontSize: moderateScale(28),
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   avatarContainer: {
-    marginBottom: 40,
+    alignItems: 'center',
+    marginBottom: hp('4%'),
   },
   avatar: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: moderateScale(110),
+    height: moderateScale(110),
+    borderRadius: moderateScale(55),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 6,
   },
   avatarPlaceholder: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: moderateScale(110),
+    height: moderateScale(110),
+    borderRadius: moderateScale(55),
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: hp('2%'),
+  },
+  loadingText: {
+    fontSize: moderateScale(15),
+    fontWeight: '500',
+  },
+  infoContainer: {
+    gap: hp('1.5%'),
+  },
+  infoCard: {
+    borderRadius: moderateScale(16),
+    padding: scale(14),
+    borderWidth: StyleSheet.hairlineWidth,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 12,
-    gap: 16,
   },
-  label: {
-    fontSize: 18,
+  iconContainer: {
+    width: moderateScale(44),
+    height: moderateScale(44),
+    borderRadius: moderateScale(22),
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: wp('3.5%'),
+  },
+  infoTextContainer: {
+    flex: 1,
+    gap: verticalScale(3),
+  },
+  infoLabel: {
+    fontSize: moderateScale(13),
+    fontWeight: '600',
+    opacity: 0.8,
+  },
+  infoValue: {
+    fontSize: moderateScale(14),
+    fontWeight: '400',
+    letterSpacing: 0.2,
   },
 });

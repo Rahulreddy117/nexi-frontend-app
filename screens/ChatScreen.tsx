@@ -11,14 +11,17 @@ import {
   Platform,
   ActivityIndicator,
   Image,
+  Alert,
 } from 'react-native';
 import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
 import { io, Socket } from 'socket.io-client';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-native-responsive-screen';
 import type { RootStackParamList } from '../types/navigation';
 import { useTheme } from '../ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
+import { SafeAreaView } from 'react-native-safe-area-context';
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const SOCKET_URL = 'https://nexi-server.onrender.com';
 const APP_ID = 'myAppId';
@@ -49,6 +52,9 @@ export default function ChatScreen() {
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
+  // New states for block system
+  const [myBlocked, setMyBlocked] = useState<string[]>([]);
+  const [targetBlocked, setTargetBlocked] = useState<string[]>([]);
 
   const flatListRef = useRef<FlatList>(null);
 
@@ -65,6 +71,41 @@ export default function ChatScreen() {
     return () => { mounted = false; };
   }, []);
 
+  // New: Load blocked lists
+  useEffect(() => {
+    const loadBlockedLists = async () => {
+      if (!currentUserId) return;
+
+      try {
+        // Load my blocked list
+        const whereMy = { auth0Id: currentUserId! };
+        const whereStrMy = encodeURIComponent(JSON.stringify(whereMy));
+        const myProfileRes = await fetch(`${API_URL}/classes/UserProfile?where=${whereStrMy}&limit=1`, {
+          headers: { 'X-Parse-Application-Id': APP_ID, 'X-Parse-Master-Key': MASTER_KEY },
+        });
+        if (myProfileRes.ok) {
+          const myData = await myProfileRes.json();
+          if (myData.results[0]) setMyBlocked(myData.results[0].blocked || []);
+        }
+
+        // Load target's blocked list
+        const whereTarget = { auth0Id: receiverId };
+        const whereStrTarget = encodeURIComponent(JSON.stringify(whereTarget));
+        const targetProfileRes = await fetch(`${API_URL}/classes/UserProfile?where=${whereStrTarget}&limit=1`, {
+          headers: { 'X-Parse-Application-Id': APP_ID, 'X-Parse-Master-Key': MASTER_KEY },
+        });
+        if (targetProfileRes.ok) {
+          const targetData = await targetProfileRes.json();
+          if (targetData.results[0]) setTargetBlocked(targetData.results[0].blocked || []);
+        }
+      } catch (err) {
+        console.error('Failed to load blocked lists:', err);
+      }
+    };
+
+    loadBlockedLists();
+  }, [currentUserId, receiverId]);
+
   // 2. Socket.IO — Real-time
   useEffect(() => {
     if (!currentUserId) return;
@@ -76,7 +117,7 @@ export default function ChatScreen() {
 
     newSocket.on('connect', () => {
       console.log('Socket connected');
-      newSocket.emit('join', currentUserId);
+      newSocket.emit('join', currentUserId!);
     });
 
     newSocket.on('newMessage', (msg: Message) => {
@@ -84,7 +125,7 @@ export default function ChatScreen() {
     });
 
     newSocket.on('messageSent', (msg: Message) => {
-      if (msg.senderId === currentUserId) addMessage(msg);
+      if (msg.senderId === currentUserId!) addMessage(msg);
     });
 
     newSocket.on('sendError', (err) => console.error('Send error:', err));
@@ -96,25 +137,25 @@ export default function ChatScreen() {
     };
   }, [currentUserId, receiverId]);
 
-const addMessage = (msg: any) => {
-  setMessages((prev) => {
-    // Prevent duplicate messages (happens when both users are online)
-    if (prev.some(m => m.objectId === msg.objectId)) {
-      return prev;
-    }
+  const addMessage = (msg: any) => {
+    setMessages((prev) => {
+      // Prevent duplicate messages (happens when both users are online)
+      if (prev.some(m => m.objectId === msg.objectId)) {
+        return prev;
+      }
 
-    const newMsg = {
-      ...msg,
-      // Safety net if objectId is missing for any reason
-      objectId: msg.objectId || `temp-${Date.now()}-${Math.random().toString(36)}`,
-    };
+      const newMsg = {
+        ...msg,
+        // Safety net if objectId is missing for any reason
+        objectId: msg.objectId || `temp-${Date.now()}-${Math.random().toString(36)}`,
+      };
 
-    const updated = [...prev, newMsg];
-    return updated.sort((a, b) => 
-      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-    );
-  });
-};
+      const updated = [...prev, newMsg];
+      return updated.sort((a, b) => 
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      );
+    });
+  };
 
   // 4. Fetch messages (no order, we sort client-side)
   const fetchMessages = useCallback(async () => {
@@ -124,8 +165,8 @@ const addMessage = (msg: any) => {
 
     const where = {
       $or: [
-        { senderId: currentUserId, receiverId },
-        { senderId: receiverId, receiverId: currentUserId },
+        { senderId: currentUserId!, receiverId },
+        { senderId: receiverId, receiverId: currentUserId! },
       ],
     };
 
@@ -161,15 +202,14 @@ const addMessage = (msg: any) => {
     }
   }, [currentUserId, receiverId]);
 
- 
   // 5. Refetch on focus (only if no messages)
-useFocusEffect(
-  useCallback(() => {
-    if (currentUserId && messages.length === 0) {
-      fetchMessages();
-    }
-  }, [currentUserId, fetchMessages, messages.length])
-);
+  useFocusEffect(
+    useCallback(() => {
+      if (currentUserId && messages.length === 0) {
+        fetchMessages();
+      }
+    }, [currentUserId, fetchMessages, messages.length])
+  );
 
   // 6. Auto-scroll to bottom
   useEffect(() => {
@@ -182,8 +222,14 @@ useFocusEffect(
   const sendMessage = () => {
     if (!newMessage.trim() || !currentUserId || !socket) return;
 
+    // NEW: Block check
+        // Silent block check - no alert, just stop sending
+    if (myBlocked.includes(receiverId) || targetBlocked.includes(currentUserId!)) {
+      return;
+    }
+
     const payload = {
-      senderId: currentUserId,
+      senderId: currentUserId!,
       receiverId,
       text: newMessage.trim(),
     };
@@ -203,7 +249,7 @@ useFocusEffect(
 
   // 8. Render message bubble
   const renderMessage = ({ item }: { item: Message }) => {
-    const isMe = item.senderId === currentUserId;
+    const isMe = item.senderId === currentUserId!;
     return (
       <View
         style={[
@@ -215,7 +261,7 @@ useFocusEffect(
         <Text style={[styles.messageText, { color: isMe ? '#fff' : colors.text }]}>
           {item.text}
         </Text>
-        <Text style={[styles.timestamp, { color: isMe ? '#ddd' : colors.secondaryText }]}>
+        <Text style={[styles.timestamp, { color: isMe ? 'rgba(255,255,255,0.7)' : colors.secondaryText }]}>
           {new Date(item.createdAt).toLocaleTimeString([], {
             hour: '2-digit',
             minute: '2-digit',
@@ -228,134 +274,212 @@ useFocusEffect(
   // 9. Loading UI
   if (loading) {
     return (
-      <View style={[styles.center, { backgroundColor: colors.background }]}>
+      <SafeAreaView style={[styles.center, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={{ color: colors.text, marginTop: 10 }}>Loading chat…</Text>
-      </View>
+        <Text style={[styles.loadingText, { color: colors.text }]}>Loading chat…</Text>
+      </SafeAreaView>
     );
   }
 
   // 10. Main UI
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={28} color={colors.text} />
+        <TouchableOpacity 
+          onPress={() => navigation.goBack()}
+          style={styles.backButton}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="arrow-back" size={moderateScale(24)} color={colors.text} />
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.headerUserContainer} onPress={handleUserProfilePress}>
+        <TouchableOpacity 
+          style={styles.headerUserContainer} 
+          onPress={handleUserProfilePress}
+          activeOpacity={0.7}
+        >
           {receiverPic ? (
             <Image source={{ uri: receiverPic }} style={styles.headerPic} />
           ) : (
             <View style={[styles.headerPic, { backgroundColor: colors.placeholderBackground }]}>
-              <Ionicons name="person" size={16} color={colors.secondaryText} />
+              <Ionicons name="person" size={moderateScale(18)} color={colors.secondaryText} />
             </View>
           )}
 
-          <Text style={[styles.headerName, { color: colors.text }]}>{receiverName}</Text>
+          <Text 
+            style={[styles.headerName, { color: colors.text }]} 
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            {receiverName}
+          </Text>
         </TouchableOpacity>
       </View>
 
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
-        keyboardVerticalOffset={90}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
       >
+        {/* Messages List */}
         <FlatList
-  ref={flatListRef}
-  data={messages}
-  renderItem={renderMessage}
-  keyExtractor={(item) => item.objectId || `msg-${item.senderId}-${item.createdAt || Date.now()}`}
-  contentContainerStyle={{ padding: 16 }}
-  showsVerticalScrollIndicator={false}
-  maintainVisibleContentPosition={{
-    minIndexForVisible: 0,
-    autoscrollToTopThreshold: 10,
-  }}
-/>
+          ref={flatListRef}
+          data={messages}
+          renderItem={renderMessage}
+          keyExtractor={(item) => item.objectId || `temp-${Date.now()}`}
+          contentContainerStyle={styles.messagesList}
+          showsVerticalScrollIndicator={false}
+          maintainVisibleContentPosition={{
+            minIndexForVisible: 0,
+            autoscrollToTopThreshold: 10,
+          }}
+        />
 
-        <View style={[styles.inputContainer, { borderTopColor: colors.border }]}>
-          <TextInput
-            style={[styles.input, { backgroundColor: colors.card, color: colors.text }]}
-            value={newMessage}
-            onChangeText={setNewMessage}
-            placeholder="Type a message..."
-            placeholderTextColor={colors.secondaryText}
-            multiline
-            maxLength={1000}
-          />
-          <TouchableOpacity
-            onPress={sendMessage}
-            disabled={!newMessage.trim()}
-            style={[
-              styles.sendBtn,
-              { backgroundColor: newMessage.trim() ? colors.primary : colors.border },
-            ]}
-          >
-            <Ionicons name="send" size={20} color="#fff" />
-          </TouchableOpacity>
-        </View>
+        
+
+        {/* INPUT BAR – NOW STICKS PERFECTLY TO BOTTOM */}
+        <SafeAreaView edges={['bottom']} style={{ backgroundColor: colors.background }}>
+          <View style={[styles.inputContainer, { borderTopColor: colors.border }]}>
+            <TextInput
+              style={[styles.input, { backgroundColor: colors.card, color: colors.text }]}
+              value={newMessage}
+              onChangeText={setNewMessage}
+              placeholder="Type a message..."
+              placeholderTextColor={colors.secondaryText}
+              multiline
+              maxLength={1000}
+            />
+            <TouchableOpacity
+              onPress={sendMessage}
+              disabled={!newMessage.trim() || (myBlocked.includes(receiverId) || targetBlocked.includes(currentUserId!))}
+              style={[
+                styles.sendBtn,
+                { backgroundColor: newMessage.trim() && !(myBlocked.includes(receiverId) || targetBlocked.includes(currentUserId!)) ? colors.primary : colors.border },
+              ]}
+            >
+              <Ionicons name="send" size={moderateScale(20)} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
       </KeyboardAvoidingView>
-    </View>
+    </SafeAreaView>
   );
 }
 
-// Styles
+// Responsive Styles using both size-matters & responsive-screen
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  container: { 
+    flex: 1 
+  },
+  center: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  loadingText: {
+    marginTop: hp('1.5%'),
+    fontSize: moderateScale(15),
+    fontWeight: '500',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    paddingHorizontal: wp('4%'),
+    paddingVertical: hp('0.5%'),
     borderBottomWidth: 1,
-    gap: 12,
+    gap: wp('3%'),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  backButton: {
+    padding: scale(4),
   },
   headerUserContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-    gap: 12,
+    gap: wp('2.5%'),
   },
   headerPic: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: moderateScale(40),
+    height: moderateScale(40),
+    borderRadius: moderateScale(20),
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerName: { fontSize: 18, fontWeight: '600' },
-  messageBubble: {
-    maxWidth: '75%',
-    padding: 12,
-    borderRadius: 18,
-    marginVertical: 4,
+  headerName: { 
+    fontSize: moderateScale(17), 
+    fontWeight: '600',
+    flex: 1,
   },
-  myBubble: { alignSelf: 'flex-end', borderBottomRightRadius: 4 },
-  theirBubble: { alignSelf: 'flex-start', borderBottomLeftRadius: 4 },
-  messageText: { fontSize: 16 },
-  timestamp: { fontSize: 11, marginTop: 4, opacity: 0.7, alignSelf: 'flex-end' },
+  messagesList: {
+    paddingHorizontal: wp('4%'),
+    paddingVertical: hp('1.5%'),
+  },
+  messageBubble: {
+    maxWidth: wp('75%'),
+    paddingHorizontal: wp('3.5%'),
+    paddingVertical: hp('1.2%'),
+    borderRadius: moderateScale(20),
+    marginVertical: hp('0.4%'),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  myBubble: { 
+    alignSelf: 'flex-end', 
+    borderBottomRightRadius: moderateScale(4),
+  },
+  theirBubble: { 
+    alignSelf: 'flex-start', 
+    borderBottomLeftRadius: moderateScale(4),
+  },
+  messageText: { 
+    fontSize: moderateScale(15),
+    lineHeight: moderateScale(20),
+  },
+  timestamp: { 
+    fontSize: moderateScale(10), 
+    marginTop: hp('0.5%'), 
+    alignSelf: 'flex-end',
+    fontWeight: '500',
+  },
   inputContainer: {
     flexDirection: 'row',
-    padding: 12,
+    paddingHorizontal: wp('3%'),
+    paddingVertical: hp('1.2%'),
+    paddingBottom: hp('1%'),        // ← reduce a little
     borderTopWidth: 1,
     alignItems: 'flex-end',
-    gap: 8,
+    gap: wp('2.5%'),
+    backgroundColor:'#000',
   },
   input: {
     flex: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 24,
-    maxHeight: 100,
-    fontSize: 16,
+    paddingHorizontal: wp('4%'),
+    paddingVertical: hp('1.5%'),
+    borderRadius: moderateScale(24),
+    maxHeight: hp('12%'),
+    fontSize: moderateScale(15),
+    lineHeight: moderateScale(20),
   },
   sendBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: moderateScale(46),
+    height: moderateScale(46),
+    borderRadius: moderateScale(23),
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 4,
   },
+ 
 });

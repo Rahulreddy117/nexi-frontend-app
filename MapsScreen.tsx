@@ -1,4 +1,4 @@
-// MapsScreen.tsx (Precise Users Button + Filter)
+// MapsScreen.tsx (Improved UI + Responsive)
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View,
@@ -23,7 +23,8 @@ import type { NavigationProp } from '@react-navigation/native';
 import { useFocusEffect } from '@react-navigation/native';
 import type { RootStackParamList } from './types/navigation';
 import LocationToggle from './screens/LocationToggleScreen';
-
+import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-native-responsive-screen';
 
 const darkMapStyle = [
   { elementType: "geometry", stylers: [{ color: "#212121" }] },
@@ -56,7 +57,6 @@ const darkMapStyle = [
     stylers: [{ color: "#2c2c2c" }],
   },
 ];
-
 
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
@@ -99,12 +99,14 @@ export default function MapsScreen({ navigation }: MapsScreenProps) {
   const [myObjectId, setMyObjectId] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+
   const [radiusMeters, setRadiusMeters] = useState<number>(20);
   const [nearbyUsers, setNearbyUsers] = useState<UserMarker[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showPreciseModal, setShowPreciseModal] = useState(false);
-  const [preciseFilter, setPreciseFilter] = useState(10);
+  //removed
   const mapRef = useRef<MapView>(null);
+  
 
   // Sync location sharing state from storage on focus
   useFocusEffect(
@@ -118,6 +120,15 @@ export default function MapsScreen({ navigation }: MapsScreenProps) {
       syncLocationState();
     }, [])
   );
+
+    const handleReloadMap = async () => {
+    if (!location) return;
+    
+    // Optional: show a quick feedback (you can remove if not needed)
+    // You could add a small loading state if you want, but for now it's instant
+
+    await fetchNearbyUsers(location.lat, location.lon, radiusMeters);
+  };
 
   const fetchUnreadCount = useCallback(async () => {
     if (!currentUserId) return;
@@ -146,22 +157,19 @@ export default function MapsScreen({ navigation }: MapsScreenProps) {
     }
   }, [currentUserId]);
 
- 
-
   useEffect(() => {
-  if (!currentUserId) return;
+    if (!currentUserId) return;
 
-  // Fetch immediately on mount
-  fetchUnreadCount();
+    fetchUnreadCount();
 
-  const subscription = AppState.addEventListener('change', (nextState) => {
-    if (nextState === 'active') {
-      fetchUnreadCount(); // Only when app is truly opened
-    }
-  });
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        fetchUnreadCount();
+      }
+    });
 
-  return () => subscription.remove();
-}, [currentUserId, fetchUnreadCount]);
+    return () => subscription.remove();
+  }, [currentUserId, fetchUnreadCount]);
 
   useEffect(() => {
     const init = async () => {
@@ -258,71 +266,154 @@ export default function MapsScreen({ navigation }: MapsScreenProps) {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   };
 
-  const filteredUsers = location ? nearbyUsers.filter(u => getDistance(location.lat, location.lon, u.location.latitude, u.location.longitude) <= preciseFilter) : [];
+  const filteredUsers = location ? nearbyUsers.filter(u => getDistance(location.lat, location.lon, u.location.latitude, u.location.longitude) <= radiusMeters) : [];
 
   return (
     <View style={styles.container}>
-      <StatusBar hidden />
-      <View style={styles.searchContainer}>
-        <Pressable style={({ pressed }) => [styles.searchBar, pressed && { opacity: 0.7 }]} onPress={() => navigation.navigate('SearchBar', { initialQuery: searchQuery })}>
-          <Ionicons name="search" size={20} color="#fff" style={styles.searchIcon} />
-          <Text style={styles.searchPlaceholder}>{searchQuery || 'Search Friends...'}</Text>
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={e => { e.stopPropagation(); setSearchQuery(''); }} style={styles.clearButton}>
-              <Ionicons name="close-circle" size={20} color="#ccc" />
-            </TouchableOpacity>
-          )}
-        </Pressable>
-        <LocationToggle enabled={locationSharingEnabled} onToggle={setLocationSharingEnabled} />
-        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginTop: 4, justifyContent: 'space-between' }}>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {[5, 10, 20, 40].map(m => (
-              <TouchableOpacity key={m} onPress={() => setRadiusMeters(m)} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, backgroundColor: radiusMeters === m ? 'rgba(0,200,83,0.9)' : 'rgba(255,255,255,0.15)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }}>
-                <Text style={{ color: '#fff', fontSize: 12 }}>{m}m</Text>
-              </TouchableOpacity>
-            ))}
+      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+     <View style={styles.searchContainer}>
+  <Pressable 
+    style={({ pressed }) => [styles.searchBar, pressed && { opacity: 0.7 }]} 
+    onPress={() => navigation.navigate('SearchBar', { initialQuery: searchQuery })}
+  >
+    <Ionicons name="search" size={moderateScale(20)} color="#fff" style={styles.searchIcon} />
+    <Text style={styles.searchPlaceholder}>{searchQuery || 'Search Friends...'}</Text>
+    {searchQuery.length > 0 && (
+      <TouchableOpacity 
+        onPress={e => { e.stopPropagation(); setSearchQuery(''); }} 
+        style={styles.clearButton}
+      >
+        <Ionicons name="close-circle" size={moderateScale(20)} color="#ccc" />
+      </TouchableOpacity>
+    )}
+  </Pressable>
+  
+  <LocationToggle enabled={locationSharingEnabled} onToggle={setLocationSharingEnabled} />
+  
+  {/* Controls Row with Filter, Reload, and Inbox */}
+  <View style={styles.controlsRow}>
+    {/* Show radius filter button ONLY when location is enabled */}
+    {locationSharingEnabled && (
+      <TouchableOpacity 
+        onPress={() => setShowPreciseModal(true)}
+        style={styles.filterButton}
+      >
+        <Ionicons name="options-outline" size={moderateScale(18)} color="#fff" />
+        <Text style={styles.filterText}>{radiusMeters}m</Text>
+      </TouchableOpacity>
+    )}
+
+    {/* Reload + Inbox buttons group (right side) */}
+    <View style={{ flexDirection: 'row', gap: wp('2%') }}>
+      {/* Reload Button - only when location enabled */}
+      {locationSharingEnabled && (
+        <TouchableOpacity 
+          onPress={handleReloadMap}
+          style={styles.reloadButton}
+        >
+          <Ionicons name="reload-outline" size={moderateScale(20)} color="#fff" />
+        </TouchableOpacity>
+      )}
+
+      {/* Inbox button - always visible */}
+      <TouchableOpacity 
+        onPress={() => {
+          setUnreadCount(0);
+          navigation.navigate('Inbox');
+        }} 
+        style={styles.inboxButton}
+      >
+        <Ionicons name="mail-outline" size={moderateScale(20)} color="#fff" />
+        {unreadCount > 0 && (
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>
+              {unreadCount > 99 ? '99+' : unreadCount.toString()}
+            </Text>
           </View>
-          <TouchableOpacity 
-  onPress={() => {
-    // This clears the badge immediately when user opens Inbox
-    setUnreadCount(0);
-    navigation.navigate('Inbox');
-  }} 
-  style={[styles.inboxButton, { position: 'relative' }]}>
-  <Ionicons name="mail-outline" size={20} color="#fff" />
-  {unreadCount > 0 && (
-    <View style={styles.badge}>
-      <Text style={styles.badgeText}>
-        {unreadCount > 99 ? '99+' : unreadCount.toString()}
-      </Text>
+        )}
+      </TouchableOpacity>
     </View>
-  )}
-</TouchableOpacity>
-        </View>
-      </View>
+  </View>
+</View>
 
       {locationSharingEnabled && location ? (
         <>
-          <MapView ref={mapRef} style={styles.map}  mapType="standard" showsUserLocation showsMyLocationButton={false} customMapStyle={darkMapStyle} initialRegion={{ latitude: location.lat, longitude: location.lon, latitudeDelta: 0.005, longitudeDelta: 0.005 }}>
+          <MapView 
+            ref={mapRef} 
+            style={styles.map}  
+            mapType="standard" 
+            showsUserLocation 
+            showsMyLocationButton={false} 
+            customMapStyle={darkMapStyle} 
+            initialRegion={{ 
+              latitude: location.lat, 
+              longitude: location.lon, 
+              latitudeDelta: 0.005, 
+              longitudeDelta: 0.005 
+            }}
+          >
             {nearbyUsers.map(user => (
-              <Marker key={user.objectId} coordinate={user.location} title={user.username || 'User'} anchor={{ x: 0.5, y: 0.5 }} onPress={() => navigation.navigate('UserProfile', { objectId: user.objectId, username: user.username || 'User', profilePicUrl: user.profilePicUrl || null, bio: '', height: '' })}>
-                {user.profilePicUrl ? <Image source={{ uri: user.profilePicUrl }} style={styles.profileMarker} /> : <View style={styles.defaultMarker}><Ionicons name="person" size={24} color="#fff" /></View>}
+              <Marker 
+                key={user.objectId} 
+                coordinate={user.location} 
+                title={user.username || 'User'} 
+                anchor={{ x: 0.5, y: 0.5 }} 
+                onPress={() => navigation.navigate('UserProfile', { 
+                  objectId: user.objectId, 
+                  username: user.username || 'User', 
+                  profilePicUrl: user.profilePicUrl || null, 
+                  bio: '', 
+                  height: '' 
+                })}
+              >
+                {user.profilePicUrl ? (
+                  <Image source={{ uri: user.profilePicUrl }} style={styles.profileMarker} />
+                ) : (
+                  <View style={styles.defaultMarker}>
+                    <Ionicons name="person" size={moderateScale(24)} color="#fff" />
+                  </View>
+                )}
               </Marker>
             ))}
-            <Marker coordinate={{ latitude: location.lat, longitude: location.lon }} title="You" anchor={{ x: 0.5, y: 0.5 }} onPress={() => myObjectId && navigation.navigate('UserProfile', { objectId: myObjectId, username: 'Me', profilePicUrl: profilePicUrl || null, bio: '', height: '' })}>
-              {profilePicUrl ? <Image source={{ uri: profilePicUrl }} style={styles.profileMarker} /> : <View style={styles.defaultMarker}><Ionicons name="person" size={24} color="#fff" /></View>}
+            <Marker 
+              coordinate={{ latitude: location.lat, longitude: location.lon }} 
+              title="You" 
+              anchor={{ x: 0.5, y: 0.5 }} 
+              onPress={() => myObjectId && navigation.navigate('UserProfile', { 
+                objectId: myObjectId, 
+                username: 'Me', 
+                profilePicUrl: profilePicUrl || null, 
+                bio: '', 
+                height: '' 
+              })}
+            >
+              {profilePicUrl ? (
+                <Image source={{ uri: profilePicUrl }} style={styles.profileMarker} />
+              ) : (
+                <View style={styles.defaultMarker}>
+                  <Ionicons name="person" size={moderateScale(24)} color="#fff" />
+                </View>
+              )}
             </Marker>
           </MapView>
 
-          <TouchableOpacity style={styles.preciseButton} onPress={() => setShowPreciseModal(true)}>
-            <Ionicons name="people-outline" size={18} color="#fff" />
+          <TouchableOpacity 
+            style={styles.preciseButton} 
+            onPress={() => setShowPreciseModal(true)}
+          >
+            <Ionicons name="people-outline" size={moderateScale(18)} color="#fff" />
             <Text style={styles.preciseText}>Precise Users</Text>
           </TouchableOpacity>
         </>
       ) : locationSharingEnabled ? (
-        <View style={styles.loadingOverlay}><ActivityIndicator size="small" color="#fff" /><Text style={styles.loadingText}>Fetching your location…</Text></View>
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="small" color="#fff" />
+          <Text style={styles.loadingText}>Fetching your location…</Text>
+        </View>
       ) : (
-        <View style={styles.emptyContainer}><Text style={styles.emptyText}>Enable location to see the map</Text></View>
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>Enable location to see the map</Text>
+        </View>
       )}
 
       <Modal visible={showPreciseModal} transparent animationType="slide" onRequestClose={() => setShowPreciseModal(false)}>
@@ -330,19 +421,53 @@ export default function MapsScreen({ navigation }: MapsScreenProps) {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Precise Users ({filteredUsers.length})</Text>
             <View style={styles.filterRow}>
-              {[5, 10, 20, 30].map(m => (
-                <TouchableOpacity key={m} onPress={() => setPreciseFilter(m)} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: preciseFilter === m ? '#007AFF' : '#333', borderWidth: 1, borderColor: preciseFilter === m ? '#007AFF' : '#444' }}>
-                  <Text style={{ color: '#fff', fontSize: 13 }}>{m}m</Text>
+              {[5, 10, 20, 40].map(m => (
+                <TouchableOpacity 
+                  key={m} 
+                  onPress={() => setRadiusMeters(m)}
+                  style={[
+                    styles.filterChip,
+                    radiusMeters === m && styles.filterChipActive
+                  ]}
+                >
+                  <Text style={styles.filterChipText}>{m}m</Text>
                 </TouchableOpacity>
               ))}
             </View>
-            <FlatList data={filteredUsers} keyExtractor={u => u.objectId} renderItem={({ item }) => (
-              <TouchableOpacity style={styles.userItem} onPress={() => { setShowPreciseModal(false); navigation.navigate('UserProfile', { objectId: item.objectId, username: item.username || 'User', profilePicUrl: item.profilePicUrl || null, bio: '', height: '' }); }}>
-                {item.profilePicUrl ? <Image source={{ uri: item.profilePicUrl }} style={styles.userPic} /> : <View style={styles.userPicPlaceholder}><Ionicons name="person" size={20} color="#fff" /></View>}
-                <Text style={styles.userName}>{item.username || 'User'}</Text>
-                <Text style={styles.userDistance}>{Math.round(getDistance(location!.lat, location!.lon, item.location.latitude, item.location.longitude))}m</Text>
-              </TouchableOpacity>
-            )} ListEmptyComponent={<Text style={styles.emptyListText}>No users within {preciseFilter}m</Text>} />
+            <FlatList 
+              data={filteredUsers} 
+              keyExtractor={u => u.objectId} 
+              renderItem={({ item }) => (
+                <TouchableOpacity 
+                  style={styles.userItem} 
+                  onPress={() => { 
+                    setShowPreciseModal(false); 
+                    navigation.navigate('UserProfile', { 
+                      objectId: item.objectId, 
+                      username: item.username || 'User', 
+                      profilePicUrl: item.profilePicUrl || null, 
+                      bio: '', 
+                      height: '' 
+                    }); 
+                  }}
+                >
+                  {item.profilePicUrl ? (
+                    <Image source={{ uri: item.profilePicUrl }} style={styles.userPic} />
+                  ) : (
+                    <View style={styles.userPicPlaceholder}>
+                      <Ionicons name="person" size={moderateScale(20)} color="#fff" />
+                    </View>
+                  )}
+                  <Text style={styles.userName}>{item.username || 'User'}</Text>
+                  <Text style={styles.userDistance}>
+                    {Math.round(getDistance(location!.lat, location!.lon, item.location.latitude, item.location.longitude))}m
+                  </Text>
+                </TouchableOpacity>
+              )} 
+              ListEmptyComponent={
+                <Text style={styles.emptyListText}>No users within {radiusMeters}m  </Text>
+              } 
+            />
           </View>
         </Pressable>
       </Modal>
@@ -351,32 +476,254 @@ export default function MapsScreen({ navigation }: MapsScreenProps) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
-  searchContainer: { position: 'absolute', top: 40, left: 16, right: 16, zIndex: 1000, gap: 12 },
-  searchBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 25, paddingHorizontal: 16, height: 50, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 8 },
-  searchIcon: { marginRight: 10 },
-  searchPlaceholder: { flex: 1, fontSize: 16, color: '#fff', fontWeight: '400' },
-  clearButton: { padding: 4 },
-  map: { flex: 1 },
-  profileMarker: { width: 44, height: 44, borderRadius: 22, borderWidth: 2, borderColor: '#fff' },
-  defaultMarker: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#555', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#fff' },
-  preciseButton: { position: 'absolute', bottom: 30, right: 16, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,122,255,0.9)', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 25, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 8, gap: 8 },
-  preciseText: { color: '#fff', fontSize: 14, fontWeight: '600' },
-  inboxButton: { padding: 8, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.15)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
-  badge: { position: 'absolute', top: -4, right: -4, backgroundColor: '#FF3B30', borderRadius: 9, minWidth: 18, height: 18, justifyContent: 'center', alignItems: 'center' },
-  badgeText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
-  loadingOverlay: { position: 'absolute', top: '45%', alignSelf: 'center', backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, flexDirection: 'row', alignItems: 'center', zIndex: 999 },
-  loadingText: { color: '#fff', marginLeft: 8, fontSize: 13, fontWeight: '500' },
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
-  emptyText: { color: '#aaa', fontSize: 16, textAlign: 'center' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: '#1c1c1c', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: '70%' },
-  modalTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
-  filterRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
-  userItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#333' },
-  userPic: { width: 40, height: 40, borderRadius: 20, marginRight: 12 },
-  userPicPlaceholder: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#555', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-  userName: { flex: 1, color: '#fff', fontSize: 16 },
-  userDistance: { color: '#888', fontSize: 13 },
-  emptyListText: { color: '#888', textAlign: 'center', marginTop: 20, fontSize: 14 },
-});
+  container: { 
+    flex: 1, 
+    backgroundColor: '#000' 
+  },
+  searchContainer: { 
+    position: 'absolute', 
+    top: StatusBar.currentHeight ? StatusBar.currentHeight + hp('2%') : hp('6%'),
+    left: wp('4%'), 
+    right: wp('4%'), 
+    zIndex: 1000, 
+    gap: hp('1.5%')
+  },
+    reloadButton: {
+    padding: scale(8),
+    borderRadius: moderateScale(16),
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  searchBar: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: 'rgba(255,255,255,0.15)', 
+    borderRadius: moderateScale(25), 
+    paddingHorizontal: wp('4%'), 
+    height: hp('6%'), 
+    borderWidth: 1, 
+    borderColor: 'rgba(255,255,255,0.2)', 
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 4 }, 
+    shadowOpacity: 0.3, 
+    shadowRadius: 8, 
+    elevation: 8 
+  },
+  searchIcon: { 
+    marginRight: wp('2.5%') 
+  },
+  searchPlaceholder: { 
+    flex: 1, 
+    fontSize: moderateScale(16), 
+    color: '#fff', 
+    fontWeight: '400' 
+  },
+  clearButton: { 
+    padding: scale(4) 
+  },
+  controlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: wp('2%'),
+  },
+  filterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: wp('4%'),
+    paddingVertical: hp('1.2%'),
+    borderRadius: moderateScale(20),
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    gap: wp('2%'),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  filterText: {
+    color: '#fff',
+    fontSize: moderateScale(13),
+    fontWeight: '600',
+  },
+  map: { 
+    flex: 1 
+  },
+  profileMarker: { 
+    width: moderateScale(44), 
+    height: moderateScale(44), 
+    borderRadius: moderateScale(22), 
+    borderWidth: 2, 
+    borderColor: '#fff' 
+  },
+  defaultMarker: { 
+    width: moderateScale(44), 
+    height: moderateScale(44), 
+    borderRadius: moderateScale(22), 
+    backgroundColor: '#555', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    borderWidth: 2, 
+    borderColor: '#fff' 
+  },
+  preciseButton: { 
+    position: 'absolute', 
+    bottom: hp('4%'), 
+    right: wp('4%'), 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: 'rgba(0,122,255,0.9)', 
+    paddingHorizontal: wp('4%'), 
+    paddingVertical: hp('1.5%'), 
+    borderRadius: moderateScale(25), 
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 4 }, 
+    shadowOpacity: 0.3, 
+    shadowRadius: 8, 
+    elevation: 8, 
+    gap: wp('2%') 
+  },
+  preciseText: { 
+    color: '#fff', 
+    fontSize: moderateScale(14), 
+    fontWeight: '600' 
+  },
+  inboxButton: { 
+    padding: scale(8), 
+    borderRadius: moderateScale(16), 
+    backgroundColor: 'rgba(255,255,255,0.15)', 
+    borderWidth: 1, 
+    borderColor: 'rgba(255,255,255,0.2)',
+    position: 'relative',
+    marginLeft: 'auto',  // ← This is the magic line
+  },
+  badge: { 
+    position: 'absolute', 
+    top: -scale(4), 
+    right: -scale(4), 
+    backgroundColor: '#FF3B30', 
+    borderRadius: moderateScale(9), 
+    minWidth: moderateScale(18), 
+    height: moderateScale(18), 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    paddingHorizontal: scale(4)
+  },
+  badgeText: { 
+    color: '#fff', 
+    fontSize: moderateScale(10), 
+    fontWeight: 'bold' 
+  },
+  loadingOverlay: { 
+    position: 'absolute', 
+    top: '45%', 
+    alignSelf: 'center', 
+    backgroundColor: 'rgba(0,0,0,0.7)', 
+    paddingHorizontal: wp('4%'), 
+    paddingVertical: hp('1.2%'), 
+    borderRadius: moderateScale(20), 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    zIndex: 999 
+  },
+  loadingText: { 
+    color: '#fff', 
+    marginLeft: wp('2%'), 
+    fontSize: moderateScale(13), 
+    fontWeight: '500' 
+  },
+  emptyContainer: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    paddingHorizontal: wp('10%') 
+  },
+  emptyText: { 
+    color: '#aaa', 
+    fontSize: moderateScale(16), 
+    textAlign: 'center' 
+  },
+  modalOverlay: { 
+    flex: 1, 
+    backgroundColor: 'rgba(0,0,0,0.7)', 
+    justifyContent: 'flex-end' 
+  },
+  modalContent: { 
+    backgroundColor: '#1c1c1c', 
+    borderTopLeftRadius: moderateScale(20), 
+    borderTopRightRadius: moderateScale(20), 
+    padding: wp('5%'), 
+    maxHeight: '70%' 
+  },
+  modalTitle: { 
+    color: '#fff', 
+    fontSize: moderateScale(18), 
+    fontWeight: 'bold', 
+    marginBottom: hp('1.5%') 
+  },
+  filterRow: { 
+    flexDirection: 'row', 
+    gap: wp('2%'), 
+    marginBottom: hp('2%') 
+  },
+  filterChip: {
+    paddingHorizontal: wp('3%'),
+    paddingVertical: hp('0.8%'),
+    borderRadius: moderateScale(12),
+    backgroundColor: '#333',
+    borderWidth: 1,
+    borderColor: '#444',
+  },
+  filterChipActive: {
+    backgroundColor: '#007AFF',
+    borderColor: '#007AFF',
+  },
+  filterChipText: {
+    color: '#fff',
+    fontSize: moderateScale(13),
+    fontWeight: '500',
+  },
+  userItem: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    paddingVertical: hp('1.5%'), 
+    borderBottomWidth: 1, 
+    borderBottomColor: '#333' 
+  },
+  userPic: { 
+    width: moderateScale(40), 
+    height: moderateScale(40), 
+    borderRadius: moderateScale(20), 
+    marginRight: wp('3%') 
+  },
+  userPicPlaceholder: { 
+    width: moderateScale(40), 
+    height: moderateScale(40), 
+    borderRadius: moderateScale(20), 
+    backgroundColor: '#555', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    marginRight: wp('3%') 
+  },
+  userName: { 
+    flex: 1, 
+    color: '#fff', 
+    fontSize: moderateScale(16),
+    fontWeight: '500'
+  },
+  userDistance: { 
+    color: '#888', 
+    fontSize: moderateScale(13) 
+  },
+  emptyListText: { 
+    color: '#888', 
+    textAlign: 'center', 
+    marginTop: hp('2.5%'), 
+    fontSize: moderateScale(14) 
+  },
+});   

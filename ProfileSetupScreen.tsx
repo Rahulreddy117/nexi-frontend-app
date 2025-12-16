@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import ImagePicker from 'react-native-image-crop-picker';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -17,8 +18,11 @@ import { RouteProp } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Picker } from '@react-native-picker/picker';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import type { RootStackParamList } from './types/navigation';
 import { useTheme } from './ThemeContext';
+import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-native-responsive-screen';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type ProfileSetupRouteProp = RouteProp<RootStackParamList, 'ProfileSetup'>;
@@ -248,6 +252,11 @@ export default function ProfileSetupScreen() {
       return;
     }
 
+    if (bio.length > 140) {
+      Alert.alert('Error', 'Bio must be less than 140 characters');
+      return;
+    }
+
     if (uploading) {
       Alert.alert('Info', 'Upload in progress...');
       return;
@@ -317,152 +326,250 @@ export default function ProfileSetupScreen() {
   const iconColor = mode === 'light' ? '#fff' : '#000';
 
   return (
-    <ScrollView contentContainerStyle={[styles.scroll, { backgroundColor: colors.background }]}>
-      <View style={styles.container}>
-        <Text style={[styles.title, { color: colors.text }]}>
-          {isEditMode ? 'Edit Your Profile' : 'Complete Your Profile'}
-        </Text>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top', 'left', 'right']}>
+      <KeyboardAvoidingView 
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
+        <ScrollView 
+          contentContainerStyle={[styles.scroll, { backgroundColor: colors.background }]} 
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
+          <View style={styles.container}>
+            <Text style={[styles.title, { color: colors.text }]}>
+              {isEditMode ? 'Edit Your Profile' : 'Complete Your Profile'}
+            </Text>
 
-        <View style={[styles.card, { backgroundColor: colors.background }]}>
-          {/* Profile Picture */}
-          <TouchableOpacity onPress={pickImage} style={styles.imageContainer}>
-            {profilePic ? (
-              <View style={styles.imageWrapper}>
-                <Image
-                  source={{ uri: profilePic }}
-                  style={[styles.profileImage, { borderColor: colors.border }]}
-                />
-                {isEditMode && (
-                  <View style={[styles.editOverlay, { backgroundColor: overlayBg }]}>
-                    <Ionicons name="camera-outline" size={20} color={iconColor} />
+            <View style={[styles.card, { backgroundColor: colors.card }]}>
+              {/* Profile Picture */}
+              <Text style={[styles.label, { color: colors.text }]}>Profile Picture</Text>
+              <TouchableOpacity onPress={pickImage} style={styles.imageContainer}>
+                {profilePic ? (
+                  <View style={styles.imageWrapper}>
+                    <Image
+                      source={{ uri: profilePic }}
+                      style={[styles.profileImage, { borderColor: colors.border }]}
+                    />
+                    {isEditMode && (
+                      <View style={[styles.editOverlay, { backgroundColor: overlayBg }]}>
+                        <Ionicons name="camera-outline" size={moderateScale(20)} color={iconColor} />
+                      </View>
+                    )}
+                  </View>
+                ) : (
+                  <View style={[styles.placeholderImage, { backgroundColor: colors.placeholderBackground }]}>
+                    <Ionicons name="camera-outline" size={moderateScale(40)} color={colors.secondaryText} />
                   </View>
                 )}
+              </TouchableOpacity>
+
+              {/* Username Input */}
+              <Text style={[styles.label, { color: colors.text }]}>Username</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  { 
+                    borderColor: usernameError ? '#ff3b30' : colors.border, 
+                    backgroundColor: colors.card, 
+                    color: colors.text 
+                  },
+                ]}
+                placeholder="Enter your username"
+                value={username}
+                onChangeText={setUsername}
+                placeholderTextColor={colors.secondaryText}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              {usernameError ? (
+                <Text style={styles.errorText}>{usernameError}</Text>
+              ) : null}
+
+              {/* Height Input */}
+              <Text style={[styles.label, { color: colors.text }]}>Height (cm)</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  { 
+                    borderColor: colors.border, 
+                    backgroundColor: colors.card, 
+                    color: colors.text 
+                  },
+                ]}
+                placeholder="Enter your height in cm"
+                value={height}
+                onChangeText={setHeight}
+                keyboardType="numeric"
+                placeholderTextColor={colors.secondaryText}
+              />
+
+              {/* Gender Dropdown */}
+              <Text style={[styles.label, { color: colors.text }]}>Gender</Text>
+              <View style={[styles.pickerContainer, { borderColor: colors.border }]}>
+                <Picker
+                  selectedValue={gender}
+                  onValueChange={(itemValue) => setGender(itemValue)}
+                  style={{ color: colors.text }}
+                  dropdownIconColor={colors.secondaryText}
+                >
+                  <Picker.Item label="Select Gender" value="" />
+                  <Picker.Item label="Male" value="male" />
+                  <Picker.Item label="Female" value="female" />
+                </Picker>
               </View>
-            ) : (
-              <View style={[styles.placeholderImage, { backgroundColor: colors.placeholderBackground }]}>
-                <Ionicons name="camera-outline" size={40} color={colors.secondaryText} />
-              </View>
-            )}
-          </TouchableOpacity>
 
-          {/* Username Input */}
-          <TextInput
-            style={[
-              styles.input,
-              { borderColor: usernameError ? '#ff3b30' : colors.border, backgroundColor: colors.background, color: colors.text },
-            ]}
-            placeholder="Username"
-            value={username}
-            onChangeText={setUsername}
-            placeholderTextColor={colors.secondaryText}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          {usernameError ? (
-            <Text style={styles.errorText}>{usernameError}</Text>
-          ) : null}
+              {/* Bio Input */}
+              <Text style={[styles.label, { color: colors.text }]}>Bio (max 140 chars)</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  styles.bioInput,
+                  { 
+                    borderColor: colors.border, 
+                    backgroundColor: colors.card, 
+                    color: colors.text 
+                  },
+                ]}
+                placeholder="Tell us about yourself"
+                value={bio}
+                onChangeText={setBio}
+                multiline
+                numberOfLines={4}
+                maxLength={140}
+                placeholderTextColor={colors.secondaryText}
+                textAlignVertical="top"
+              />
+              <Text style={[styles.charCount, { color: bio.length > 140 ? '#ff3b30' : colors.secondaryText }]}>
+                {bio.length}/140
+              </Text>
 
-          {/* Height Input */}
-          <TextInput
-            style={[
-              styles.input,
-              { borderColor: colors.border, backgroundColor: colors.background, color: colors.text },
-            ]}
-            placeholder="Height (in cm)"
-            value={height}
-            onChangeText={setHeight}
-            keyboardType="numeric"
-            placeholderTextColor={colors.secondaryText}
-          />
-
-          {/* Gender Dropdown */}
-          <View style={[styles.pickerContainer, { borderColor: colors.border }]}>
-            <Picker
-              selectedValue={gender}
-              onValueChange={(itemValue) => setGender(itemValue)}
-              style={{ color: colors.text }}
-              dropdownIconColor={colors.secondaryText}
-            >
-              <Picker.Item label="Select Gender" value="" />
-              <Picker.Item label="Male" value="male" />
-              <Picker.Item label="Female" value="female" />
-            </Picker>
+              {/* Save Button */}
+              <ThemedButton
+                title={uploading ? 'Uploading...' : isEditMode ? 'Update Profile' : 'Save Profile'}
+                onPress={saveProfile}
+                disabled={uploading}
+              />
+            </View>
           </View>
-
-          {/* Bio Input */}
-          <TextInput
-            style={[
-              styles.input,
-              styles.bioInput,
-              { borderColor: colors.border, backgroundColor: colors.background, color: colors.text },
-            ]}
-            placeholder="Short bio (optional)"
-            value={bio}
-            onChangeText={setBio}
-            multiline
-            numberOfLines={4}
-            placeholderTextColor={colors.secondaryText}
-          />
-
-          {/* Save Button */}
-          <ThemedButton
-            title={uploading ? 'Uploading...' : isEditMode ? 'Update Profile' : 'Save Profile'}
-            onPress={saveProfile}
-            disabled={uploading}
-          />
-        </View>
-      </View>
-    </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  scroll: { flexGrow: 1, paddingVertical: 30 },
-  container: { flex: 1, alignItems: 'center', paddingHorizontal: 20 },
-  title: { fontSize: 22, fontWeight: '600', marginBottom: 20 },
-  card: { width: '100%', borderRadius: 12, padding: 20 },
+  safeArea: {
+    flex: 1,
+  },
+  keyboardView: {
+    flex: 1,
+  },
+  scroll: { 
+    flexGrow: 1, 
+    paddingVertical: hp('3%'),
+  },
+  container: { 
+    flex: 1, 
+    alignItems: 'center', 
+    paddingHorizontal: wp('5%') 
+  },
+  title: { 
+    fontSize: moderateScale(24), 
+    fontWeight: '700', 
+    marginBottom: hp('2%'),
+    textAlign: 'center',
+    letterSpacing: 0.3,
+  },
+  card: { 
+    width: '100%', 
+    borderRadius: moderateScale(16), 
+    padding: wp('5%'),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  label: {
+    fontSize: moderateScale(14),
+    fontWeight: '600',
+    marginBottom: verticalScale(6),
+    marginTop: hp('2%'),
+  },
   input: {
     borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 15,
-    fontSize: 16,
+    borderRadius: moderateScale(12),
+    padding: moderateScale(16),
+    fontSize: moderateScale(16),
+    fontWeight: '500',
   },
-  bioInput: { height: 100, textAlignVertical: 'top' },
-  imageContainer: { alignSelf: 'center', marginBottom: 20 },
-  imageWrapper: { position: 'relative', width: 100, height: 100, borderRadius: 50 },
-  profileImage: { width: 100, height: 100, borderRadius: 60, borderWidth: 2 },
+  bioInput: { 
+    height: verticalScale(120), 
+    textAlignVertical: 'top' 
+  },
+  charCount: {
+    fontSize: moderateScale(12),
+    textAlign: 'right',
+    marginTop: verticalScale(4),
+  },
+  imageContainer: { 
+    alignSelf: 'center', 
+    marginBottom: hp('2%'),
+    marginTop: hp('1%'),
+  },
+  imageWrapper: { 
+    position: 'relative', 
+    width: moderateScale(120), 
+    height: moderateScale(120), 
+    borderRadius: moderateScale(60) 
+  },
+  profileImage: { 
+    width: moderateScale(120), 
+    height: moderateScale(120), 
+    borderRadius: moderateScale(60), 
+    borderWidth: 2 
+  },
   editOverlay: {
     position: 'absolute',
     top: '50%',
     left: '50%',
-    transform: [{ translateX: -16 }, { translateY: -16 }],
-    borderRadius: 20,
-    width: 32,
-    height: 32,
+    transform: [{ translateX: -12 }, { translateY: -12 }],
+    borderRadius: moderateScale(16),
+    width: moderateScale(24),
+    height: moderateScale(24),
     justifyContent: 'center',
     alignItems: 'center',
   },
   placeholderImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 60,
+    width: moderateScale(120),
+    height: moderateScale(120),
+    borderRadius: moderateScale(60),
     justifyContent: 'center',
     alignItems: 'center',
   },
-  button: { paddingVertical: 14, borderRadius: 8, marginTop: 25 },
+  button: { 
+    paddingVertical: verticalScale(16), 
+    borderRadius: moderateScale(12), 
+    marginTop: hp('3%'),
+  },
   disabledButton: { opacity: 0.6 },
-  buttonText: { textAlign: 'center', fontSize: 16, fontWeight: '600' },
+  buttonText: { 
+    textAlign: 'center', 
+    fontSize: moderateScale(16), 
+    fontWeight: '600' 
+  },
   pickerContainer: {
     borderWidth: 1,
-    borderRadius: 8,
-    marginTop: 15,
+    borderRadius: moderateScale(12),
     overflow: 'hidden',
   },
   errorText: {
     color: '#ff3b30',
-    fontSize: 13,
-    marginTop: 5,
-    marginLeft: 5,
+    fontSize: moderateScale(13),
+    marginTop: verticalScale(4),
+    marginLeft: wp('1%'),
   },
 });

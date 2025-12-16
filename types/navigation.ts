@@ -74,6 +74,13 @@ export type RootStackParamList = {
          // Parse objectId of the current user
   };
   PersonalInfo: undefined;
+  BlockedUsers: undefined;
+  RoomSettings: { roomId: string; roomName: string };
+    TermsAndConditions: undefined;  // 👈 ADD THIS LINE
+
+
+  
+
   
   // (Optional: you can keep these commented if you plan to re-add map posts later)
   /*
@@ -101,4 +108,6 @@ export type RootStackParamList = {
     showInFeed: boolean;
   };
   */
+
+  
 };

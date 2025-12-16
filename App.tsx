@@ -12,6 +12,8 @@ import {
   StyleSheet,
   Image,
 } from 'react-native';
+
+import BlockedUsersScreen from './screens/BlockedUsers';
 import { AppState } from 'react-native';
 import ChatScreen from './screens/ChatScreen';
 import InboxScreen from './screens/InboxScreen';
@@ -23,6 +25,7 @@ import EncryptedStorage from 'react-native-encrypted-storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { jwtDecode } from 'jwt-decode';
 import LoginScreen from './LoginScreen';
+import TermsAndConditionsScreen from './screens/TermsAndConditionsScreen';
 import ProfileSetupScreen from './ProfileSetupScreen';
 import ViewProfileScreen from './ViewProfileScreen';
 import MapsScreen from './MapsScreen';
@@ -31,20 +34,23 @@ import type { RootStackParamList } from './types/navigation';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { ThemeProvider, useTheme } from './ThemeContext';
 import PostFeedScreen from './screens/PostFeedScreen';
-import UserUploadPostScreen from './screens/UserUploadPost';  // ← ADD THIS
+import UserUploadPostScreen from './screens/UserUploadPost';
 import RoomCreationScreen from './screens/RoomCreation';
 import RoomLocationScreen from './screens/RoomLocationScreen';
-import RoomUserProfile from './rooms/RoomUserProfile';   // correct path
-import JoinedRoomsScreen from './rooms/JoinedRooms';   // or './screens/JoinedRooms' if you saved it there
-// Add this line with your other imports
-import RoomPostUpload from './rooms/RoomPostUpload';   // ← ADD THIS
+import RoomUserProfile from './rooms/RoomUserProfile';
+import JoinedRoomsScreen from './rooms/JoinedRooms';
+import RoomPostUpload from './rooms/RoomPostUpload';
+import PersonalInfo from './screens/PersonalInfo';
+import { scale, moderateScale } from 'react-native-size-matters';
+import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-native-responsive-screen';
 
-import PersonalInfo from './screens/PersonalInfo';  // ← ADD THIS LINE
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
 const MASTER_KEY = 'myMasterKey';
+
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator();
+
 interface Auth0IdToken {
   sub: string;
   name: string;
@@ -52,6 +58,7 @@ interface Auth0IdToken {
   email: string;
   email_verified: boolean;
 }
+
 async function queryUser(auth0Id: string): Promise<any | null> {
   const where = { auth0Id };
   const whereStr = encodeURIComponent(JSON.stringify(where));
@@ -67,6 +74,7 @@ async function queryUser(auth0Id: string): Promise<any | null> {
   const data = await res.json();
   return data.results?.[0] ?? null;
 }
+
 function LoadingScreen() {
   return (
     <View style={styles.loadingContainer}>
@@ -75,9 +83,11 @@ function LoadingScreen() {
     </View>
   );
 }
+
 function BottomTabsNavigator({ profilePicUrl }: { profilePicUrl?: string | null }) {
   const { colors } = useTheme();
   const [unreadCount, setUnreadCount] = useState(0);
+
   const fetchUnreadCount = async () => {
     try {
       const auth0Id = await AsyncStorage.getItem('auth0Id');
@@ -100,12 +110,9 @@ function BottomTabsNavigator({ profilePicUrl }: { profilePicUrl?: string | null 
       console.error('Badge fetch error:', err);
     }
   };
-    // ←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←
-  // REPLACE THE OLD useEffect WITH THIS ONE:
+
   useEffect(() => {
-    // First load when app starts
     fetchUnreadCount();
-    // Refresh when app comes to foreground (user opens app again)
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         fetchUnreadCount();
@@ -113,39 +120,55 @@ function BottomTabsNavigator({ profilePicUrl }: { profilePicUrl?: string | null 
     });
     return () => subscription.remove();
   }, []);
-  // ←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←
+
   return (
     <Tab.Navigator
       screenOptions={{
         tabBarActiveTintColor: colors.iconColor,
         tabBarInactiveTintColor: colors.iconColor,
-        tabBarStyle: { backgroundColor: colors.tabBarBackground },
+        tabBarStyle: { 
+          backgroundColor: colors.tabBarBackground,
+          height: hp('9.4%'),
+          paddingBottom: hp('1%'),
+          paddingTop: hp('0.5%'),
+        },
         headerShown: false,
         tabBarShowLabel: false,
       }}
     >
-
-      
+      {/* Maps */}
       <Tab.Screen
         name="Maps"
         component={MapsScreen}
         options={{
           tabBarIcon: ({ size }) => (
-            < Ionicons name="location-outline" size={size} color={colors.iconColor} />
-          ),    
-          lazy: false,
+            <Ionicons 
+              name="location-outline" 
+              size={moderateScale(size)} 
+              color={colors.iconColor} 
+            />
+          ),
+          lazy: true,
         }}
       />
+
+      {/* PostFeed */}
       <Tab.Screen
-  name="PostFeed"
-  component={PostFeedScreen}
-  options={{
-    tabBarIcon: ({ size }) => (
-      <Ionicons name="play-outline" size={size} color={colors.iconColor} />
-    ),
-    lazy: false,
-  }}
-/>
+        name="PostFeed"
+        component={PostFeedScreen}
+        options={{
+          tabBarIcon: ({ size }) => (
+            <Ionicons 
+              name="compass-outline" 
+              size={moderateScale(size)} 
+              color={colors.iconColor} 
+            />
+          ),
+          lazy: true,
+        }}
+      />
+
+      {/* Notifications */}
       <Tab.Screen
         name="Notifications"
         component={NotificationScreen}
@@ -153,9 +176,9 @@ function BottomTabsNavigator({ profilePicUrl }: { profilePicUrl?: string | null 
           tabBarIcon: ({ size }) => (
             <View style={{ position: 'relative' }}>
               <Ionicons
-                name={unreadCount > 0 ? "notifications" : "notifications-outline"}
-                size={size}
-                color={unreadCount > 0 ? "#6366f1" : colors.iconColor}
+                name={unreadCount > 0 ? 'notifications' : 'notifications-outline'}
+                size={moderateScale(size)}
+                color={unreadCount > 0 ? '#888' : colors.iconColor}
               />
               {unreadCount > 0 && (
                 <View style={styles.badge}>
@@ -167,66 +190,90 @@ function BottomTabsNavigator({ profilePicUrl }: { profilePicUrl?: string | null 
             </View>
           ),
         }}
-        listeners={{
-          focus: fetchUnreadCount, // Refresh when user opens tab
-        }}
+        listeners={{ focus: fetchUnreadCount }}
       />
+
+      {/* Profile Tab */}
       <Tab.Screen
         name="ViewProfile"
+        component={ViewProfileScreen}
         options={{
-          tabBarIcon: ({ size }) =>
-            profilePicUrl ? (
+          tabBarIcon: ({ size }) => {
+            const { colors } = useTheme();
+            return profilePicUrl ? (
               <Image
                 source={{ uri: profilePicUrl }}
                 style={{
-                  width: size,
-                  height: size,
-                  borderRadius: size / 2,
+                  width: moderateScale(size),
+                  height: moderateScale(size),
+                  borderRadius: moderateScale(size / 2),
                   borderWidth: 2,
                   borderColor: colors.iconColor,
                 }}
               />
             ) : (
-              <Ionicons name="person-outline" size={size} color={colors.iconColor} />
-            ),
+              <Ionicons 
+                name="person-outline" 
+                size={moderateScale(size)} 
+                color={colors.iconColor} 
+              />
+            );
+          },
+          lazy: true,
         }}
-      >
-
-        
-        {() => <ViewProfileScreen />}
-      </Tab.Screen>
+      />
     </Tab.Navigator>
   );
 }
+
 const styles = StyleSheet.create({
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 10, fontSize: 16 },
+  loadingContainer: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  loadingText: { 
+    marginTop: hp('1.5%'), 
+    fontSize: moderateScale(16) 
+  },
   badge: {
     position: 'absolute',
-    right: -8,
-    top: -5,
-    backgroundColor: '#ef4444',
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
-    paddingHorizontal: 6,
+    right: scale(-8),
+    top: scale(-5),
+    backgroundColor: '#FF0000',
+    borderRadius: moderateScale(10),
+    minWidth: moderateScale(20),
+    height: moderateScale(20),
+    paddingHorizontal: scale(6),
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: '#fff',
   },
   badgeText: {
     color: '#fff',
-    fontSize: 11,
+    fontSize: moderateScale(11),
     fontWeight: 'bold',
   },
 });
+
 export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [initialRouteName, setInitialRouteName] = useState<keyof RootStackParamList>('Login');
   const [profilePicUrl, setProfilePicUrl] = useState<string | null>(null);
+
   useEffect(() => {
     const checkAuth = async () => {
+      // Check if terms accepted first
+      const termsAccepted = await AsyncStorage.getItem('termsAccepted');
+      
+      if (termsAccepted !== 'true') {
+        // First time user - show terms
+        setInitialRouteName('TermsAndConditions');
+        setIsLoading(false);
+        return;
+      }
+
+      // Rest of existing checkAuth logic
       const token = await EncryptedStorage.getItem('idToken');
       if (!token) {
         setInitialRouteName('Login');
@@ -254,11 +301,22 @@ export default function App() {
     };
     checkAuth();
   }, []);
+
   if (isLoading) return <LoadingScreen />;
+
   return (
     <ThemeProvider>
       <NavigationContainer>
-        <Stack.Navigator initialRouteName={initialRouteName} screenOptions={{ headerShown: false }}>
+        <Stack.Navigator 
+          initialRouteName={initialRouteName} 
+          screenOptions={{ 
+            headerShown: false,
+            // @ts-ignore - Safe for RN, fixes TS but unmounts inactive screens (kills lag/errors)
+            detachInactiveScreens: true,
+            animation: 'fade_from_bottom',
+          }}
+        >
+          <Stack.Screen name="TermsAndConditions" component={TermsAndConditionsScreen} />
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
           <Stack.Screen name="Home">
@@ -277,6 +335,7 @@ export default function App() {
           <Stack.Screen name="RoomPostUpload" component={RoomPostUpload} />
           <Stack.Screen name="JoinedRooms" component={JoinedRoomsScreen} />
           <Stack.Screen name="PersonalInfo" component={PersonalInfo} />
+          <Stack.Screen name="BlockedUsers" component={BlockedUsersScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </ThemeProvider>

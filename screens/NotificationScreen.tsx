@@ -13,6 +13,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../ThemeContext';
 import { useFocusEffect } from '@react-navigation/native';
 import { useNavigation } from '@react-navigation/native';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-native-responsive-screen';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
@@ -68,9 +72,9 @@ export default function NotificationScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      fetchNotifications();   // ← only this, NO polling
+      fetchNotifications();
     }, [fetchNotifications])
-  );  
+  );
 
   const markAsRead = async (id: string) => {
     try {
@@ -101,7 +105,10 @@ export default function NotificationScreen() {
       <TouchableOpacity
         style={[
           styles.item,
-          { backgroundColor: item.read ? 'transparent' : 'rgba(99, 102, 241, 0.12)' },
+          { 
+            backgroundColor: item.read ? colors.card : 'rgba(99, 102, 241, 0.12)',
+            borderColor: colors.border,
+          },
         ]}
         onPress={() => {
           markAsRead(item.objectId);
@@ -115,65 +122,204 @@ export default function NotificationScreen() {
             });
           }
         }}
+        activeOpacity={0.7}
       >
         <Image source={{ uri: picUrl }} style={styles.avatar} />
         <View style={styles.textContainer}>
-          <Text style={[styles.username, { color: colors.text }]}>{username}</Text>
-          <Text style={[styles.message, { color: colors.secondaryText }]}>
-            started following you · {timeAgo(item.createdAt)}
+          <Text style={[styles.username, { color: colors.text }]} numberOfLines={1}>
+            {username}
+          </Text>
+          <View style={styles.messageRow}>
+            <Ionicons 
+              name="person-add" 
+              size={moderateScale(14)} 
+              color={colors.secondaryText} 
+              style={styles.followIcon}
+            />
+            <Text style={[styles.message, { color: colors.secondaryText }]}>
+              started following you
+            </Text>
+          </View>
+          <Text style={[styles.timeText, { color: colors.secondaryText }]}>
+            {timeAgo(item.createdAt)}
           </Text>
         </View>
-        {!item.read && <View style={styles.unreadDot} />}
+        {!item.read && <View style={[styles.unreadDot, { backgroundColor: colors.primary }]} />}
       </TouchableOpacity>
     );
   };
 
   if (loading) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.text} />
-      </View>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.secondaryText }]}>
+            Loading notifications...
+          </Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Text style={[styles.title, { color: colors.text }]}>Notifications</Text>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+      <View style={styles.header}>
+        <Text style={[styles.title, { color: colors.text }]}>Notifications</Text>
+        {notifications.length > 0 && (
+          <View style={[styles.badge, { backgroundColor: colors.primary }]}>
+            <Text style={styles.badgeText}>{notifications.filter(n => !n.read).length}</Text>
+          </View>
+        )}
+      </View>
+
       <FlatList
         data={notifications}
         keyExtractor={item => item.objectId}
         renderItem={renderItem}
-        refreshing={loading}                 // ← add this
+        refreshing={loading}
         onRefresh={fetchNotifications}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
         ListEmptyComponent={
-          <Text style={{ color: colors.secondaryText, textAlign: 'center', marginTop: 50 }}>
-            No notifications yet
-          </Text>
+          <View style={styles.emptyContainer}>
+            <View style={[styles.iconContainer, { backgroundColor: colors.card }]}>
+              <Ionicons name="notifications-outline" size={moderateScale(56)} color={colors.secondaryText} />
+            </View>
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>No Notifications Yet!</Text>
+            
+          </View>
         }
       />
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 60 },
-  title: { fontSize: 28, fontWeight: 'bold', textAlign: 'center', marginBottom: 20 },
+  container: { 
+    flex: 1, 
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: hp('2%'),
+    paddingHorizontal: wp('4%'),
+    paddingTop: hp('1.8%'),
+    gap: wp('2%'),
+  },
+  title: { 
+    fontSize: moderateScale(28), 
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  badge: {
+    minWidth: moderateScale(28),
+    height: moderateScale(28),
+    borderRadius: moderateScale(14),
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: scale(8),
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: moderateScale(13),
+    fontWeight: '700',
+  },
+  listContent: {
+    paddingHorizontal: wp('4%'),
+    paddingBottom: hp('2%'),
+    flexGrow: 1,
+  },
   item: {
     flexDirection: 'row',
-    padding: 16,
-    marginHorizontal: 16,
-    marginVertical: 6,
-    borderRadius: 16,
+    padding: scale(11),
+    marginBottom: hp('1.2%'),
+    borderRadius: moderateScale(16),
     alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
     elevation: 2,
+  },
+  avatar: { 
+    width: moderateScale(50), 
+    height: moderateScale(50), 
+    borderRadius: moderateScale(28), 
+    marginRight: wp('3%'),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
-    shadowRadius: 3,
+    shadowRadius: 2,
+    elevation: 2,
   },
-  avatar: { width: 50, height: 50, borderRadius: 25, marginRight: 16 },              
-  textContainer: { flex: 1 },   
-  username: { fontWeight: '600', fontSize: 16 },   
-  message: { fontSize: 14, marginTop: 4, opacity: 0.8 },        
-  unreadDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#6366f1' },     
+  textContainer: { 
+    flex: 1,
+    gap: verticalScale(3),
+  },
+  username: { 
+    fontWeight: '700', 
+    fontSize: moderateScale(16),
+    letterSpacing: 0.2,
+  },
+  messageRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  followIcon: {
+    marginRight: wp('1.5%'),
+  },
+  message: { 
+    fontSize: moderateScale(14),
+    fontWeight: '500',
+  },
+  timeText: {
+    fontSize: moderateScale(12),
+    fontWeight: '500',
+    opacity: 0.7,
+  },
+  unreadDot: { 
+    width: moderateScale(12), 
+    height: moderateScale(12), 
+    borderRadius: moderateScale(6),
+    marginLeft: wp('2%'),
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: hp('2%'),
+  },
+  loadingText: {
+    fontSize: moderateScale(15),
+    fontWeight: '500',
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: hp('12%'),
+    gap: hp('1.5%'),
+  },
+  iconContainer: {
+    width: moderateScale(120),
+    height: moderateScale(120),
+    borderRadius: moderateScale(60),
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: hp('1%'),
+  },
+  emptyTitle: {
+    fontSize: moderateScale(22),
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  emptyText: {
+    fontSize: moderateScale(15),
+    textAlign: 'center',
+    lineHeight: moderateScale(22),
+    paddingHorizontal: wp('10%'),
+    fontWeight: '500',
+  },
 });

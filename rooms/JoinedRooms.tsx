@@ -1,5 +1,5 @@
 // JoinedRooms.tsx — Lists all rooms the current user has joined
-import React, { useState, useEffect, } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,25 +8,24 @@ import {
   Image,
   TouchableOpacity,
   ActivityIndicator,
-  Dimensions,
   RefreshControl,
 } from 'react-native';
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import type { RootStackParamList } from '../types/navigation'; // Adjust path as needed
-import { useTheme } from '../ThemeContext'; // Adjust path as needed
+import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-native-responsive-screen';
+import type { RootStackParamList } from '../types/navigation';
+import { useTheme } from '../ThemeContext';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 type JoinedRoomsRouteProp = RouteProp<RootStackParamList, 'JoinedRooms'>;
-type NavigationProp = any; // Replace with proper NativeStackNavigationProp if needed
+type NavigationProp = any;
 
 interface JoinedRoom {
   roomId: string;
   roomName: string;
   photoUrl?: string;
 }
-
-const { width } = Dimensions.get('window');
-const ITEM_WIDTH = width - 40; // Padding
 
 export default function JoinedRoomsScreen() {
   const route = useRoute<JoinedRoomsRouteProp>();
@@ -95,48 +94,83 @@ export default function JoinedRoomsScreen() {
   };
 
   const renderRoom = ({ item }: { item: JoinedRoom }) => (
-    <TouchableOpacity style={[styles.roomItem, { backgroundColor: colors.card }]} onPress={() => handleRoomPress(item)}>
+    <TouchableOpacity
+      style={[styles.roomItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+      onPress={() => handleRoomPress(item)}
+      activeOpacity={0.7}
+    >
       {item.photoUrl ? (
         <Image source={{ uri: item.photoUrl }} style={styles.roomImage} />
       ) : (
         <View style={[styles.roomImagePlaceholder, { backgroundColor: colors.placeholderBackground }]}>
-          <Ionicons name="image-outline" size={40} color={colors.secondaryText} />
+          <Ionicons name="people-outline" size={moderateScale(28)} color={colors.secondaryText} />
         </View>
       )}
-      <Text style={[styles.roomName, { color: colors.text }]} numberOfLines={2}>
-        {item.roomName}
-      </Text>
+      <View style={styles.roomInfo}>
+        <Text style={[styles.roomName, { color: colors.text }]} numberOfLines={2}>
+          {item.roomName}
+        </Text>
+      </View>
+      <Ionicons name="chevron-forward" size={moderateScale(20)} color={colors.secondaryText} />
     </TouchableOpacity>
   );
 
   if (loading) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.iconColor} />
-        <Text style={{ color: colors.text, marginTop: 10 }}>Loading joined rooms...</Text>
-      </View>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.secondaryText }]}>
+            Loading joined rooms...
+          </Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+      <View style={styles.header}>
+        <Text style={[styles.title, { color: colors.text }]}>My Rooms</Text>
+        {joinedRooms.length > 0 && (
+          <View style={[styles.badge, { backgroundColor: colors.primary }]}>
+            <Text style={styles.badgeText}>{joinedRooms.length}</Text>
+          </View>
+        )}
+      </View>
+
       <FlatList
         data={joinedRooms}
         renderItem={renderRoom}
         keyExtractor={(item) => item.roomId}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.iconColor]} tintColor={colors.iconColor} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.accent]}
+            progressBackgroundColor="#fff"
+
+          />
         }
-        contentContainerStyle={styles.listContainer}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Ionicons name="chatbubble-ellipses-outline" size={60} color={colors.secondaryText} />
-            <Text style={[styles.emptyText, { color: colors.secondaryText }]}>No rooms joined yet.</Text>
-            <Text style={[styles.emptySubtext, { color: colors.secondaryText }]}>Join some rooms to see them here!</Text>
+            <View style={[styles.iconContainer, { backgroundColor: colors.card }]}>
+              <Ionicons
+                name="chatbubble-ellipses-outline"
+                size={moderateScale(56)}
+                color={colors.secondaryText}
+              />
+            </View>
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>No rooms joined yet</Text>
+            <Text style={[styles.emptyText, { color: colors.secondaryText }]}>
+              Join some rooms to see them here!
+            </Text>
           </View>
         }
       />
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -144,57 +178,113 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  listContainer: {
-    padding: 20,
-    paddingTop: 10,
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: hp('2%'),
+    paddingHorizontal: wp('4%'),
+    paddingTop: hp('1.8%'),
+    gap: wp('2%'),
+  },
+  title: {
+    fontSize: moderateScale(28),
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  badge: {
+    minWidth: moderateScale(28),
+    height: moderateScale(28),
+    borderRadius: moderateScale(14),
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: scale(8),
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: moderateScale(13),
+    fontWeight: '700',
+  },
+  listContent: {
+    paddingHorizontal: wp('4%'),
+    paddingBottom: hp('2%'),
+    flexGrow: 1,
   },
   roomItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    marginBottom: 12,
-    borderRadius: 12,
-    elevation: 2,
+    padding: scale(11),
+    marginBottom: hp('1.2%'),
+    borderRadius: moderateScale(16),
+    borderWidth: StyleSheet.hairlineWidth,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.22,
-    shadowRadius: 2.22,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
   roomImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    marginRight: 16,
+    width: moderateScale(50),
+    height: moderateScale(50),
+    borderRadius: moderateScale(25),
+    marginRight: wp('3%'),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   roomImagePlaceholder: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    marginRight: 16,
+    width: moderateScale(50),
+    height: moderateScale(50),
+    borderRadius: moderateScale(25),
+    marginRight: wp('3%'),
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  roomInfo: {
+    flex: 1,
+    justifyContent: 'center',
   },
   roomName: {
-    fontSize: 16,
-    fontWeight: '600',
-    flex: 1,
+    fontSize: moderateScale(16),
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
-  emptyContainer: {
+  loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: 100,
+    gap: hp('2%'),
+  },
+  loadingText: {
+    fontSize: moderateScale(15),
+    fontWeight: '500',
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: hp('12%'),
+    gap: hp('1.5%'),
+  },
+  iconContainer: {
+    width: moderateScale(120),
+    height: moderateScale(120),
+    borderRadius: moderateScale(60),
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: hp('1%'),
+  },
+  emptyTitle: {
+    fontSize: moderateScale(22),
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   emptyText: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginTop: 16,
+    fontSize: moderateScale(15),
     textAlign: 'center',
-  },
-  emptySubtext: {
-    fontSize: 14,
-    marginTop: 4,
-    textAlign: 'center',
-    opacity: 0.8,
+    lineHeight: moderateScale(22),
+    paddingHorizontal: wp('10%'),
+    fontWeight: '500',
   },
 });

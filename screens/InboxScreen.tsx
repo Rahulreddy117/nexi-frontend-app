@@ -13,16 +13,18 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-native-responsive-screen';
 import { useTheme } from '../ThemeContext';
 
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
 const MASTER_KEY = 'myMasterKey';
 
-const UNREAD_DOT_SIZE = 10; // New constant for dot size
+const UNREAD_DOT_SIZE = moderateScale(10);
 
 // -----------------------------------------------------------------
-//  PROFILE CACHE HELPERS (3-day cache)
+//  PROFILE CACHE HELPERS (3-day cache)
 // -----------------------------------------------------------------
 const PROFILE_PREFIX = '@profile_';
 const CACHE_TTL_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
@@ -58,7 +60,7 @@ const setCachedProfile = async (userId: string, profile: any) => {
 };
 
 // -----------------------------------------------------------------
-//  MAIN SCREEN
+//  MAIN SCREEN
 // -----------------------------------------------------------------
 interface Conversation {
   partnerId: string;
@@ -66,7 +68,7 @@ interface Conversation {
   partnerPic?: string;
   lastMessage: string;
   lastMessageAt: string;
-  isUnread: boolean; // NEW: Track unread status
+  isUnread: boolean;
 }
 
 export default function InboxScreen() {
@@ -226,15 +228,14 @@ export default function InboxScreen() {
             partnerPic: profile?.profilePicUrl,
             lastMessage: msg.text,
             lastMessageAt: msg.createdAt,
-            isUnread: isMsgUnread, // Initial unread status
+            isUnread: isMsgUnread,
           });
         } else {
           const existing = partnerMap.get(partnerId)!;
           if (new Date(msg.createdAt) > new Date(existing.lastMessageAt)) {
-            // This is the latest message, update conversation details
             existing.lastMessage = msg.text;
             existing.lastMessageAt = msg.createdAt;
-            existing.isUnread = isMsgUnread; // Update unread status for the latest message
+            existing.isUnread = isMsgUnread;
           }
         }
       }
@@ -255,17 +256,14 @@ export default function InboxScreen() {
   // -------------------------------------------------------------
   // 4. Refetch on focus (Crucial: sets the `lastInboxSeen` time)
   // -------------------------------------------------------------
-    // Smart focus: only refetch inbox if it's empty (prevents refetch when coming back from Chat)
   useFocusEffect(
     useCallback(() => {
       if (currentUserId) {
         if (conversations.length === 0) {
-          // First time or truly empty → fetch
           fetchInbox().then(() => {
             AsyncStorage.setItem(`lastInboxSeen_${currentUserId}`, new Date().toISOString());
           });
         } else {
-          // Just came back from Chat/UserProfile → update "seen" time only (for unread dots)
           AsyncStorage.setItem(`lastInboxSeen_${currentUserId}`, new Date().toISOString());
         }
       }
@@ -290,6 +288,7 @@ export default function InboxScreen() {
           receiverPic: item.partnerPic,
         })
       }
+      activeOpacity={0.7}
     >
       {/* Avatar Section */}
       <View style={styles.avatarContainer}> 
@@ -297,19 +296,24 @@ export default function InboxScreen() {
           <Image source={{ uri: item.partnerPic }} style={styles.avatar} />
         ) : (
           <View style={[styles.avatar, { backgroundColor: colors.placeholderBackground }]}>
-            <Ionicons name="person" size={20} color={colors.secondaryText} />
+            <Ionicons name="person" size={moderateScale(22)} color={colors.secondaryText} />
           </View>
         )}
       </View>
 
       {/* Info Section (Name and Last Message) */}
       <View style={styles.info}>
-        <Text style={[styles.name, { color: colors.text }]}>{item.partnerName}</Text>
+        <Text 
+          style={[styles.name, { color: colors.text }]}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
+          {item.partnerName}
+        </Text>
         <Text
           style={[
             styles.lastMsg,
             { color: colors.secondaryText },
-            // Apply bold style if unread
             item.isUnread && { fontWeight: '700', color: colors.text }, 
           ]}
           numberOfLines={1}
@@ -326,7 +330,6 @@ export default function InboxScreen() {
             minute: '2-digit',
           })}
         </Text>
-        {/* Render the blue dot on the top right */}
         {item.isUnread && (
           <View style={[styles.unreadDot, { backgroundColor: colors.primary }]} />
         )}
@@ -341,20 +344,25 @@ export default function InboxScreen() {
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.loadingText, { color: colors.text }]}>Loading inbox…</Text>
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <Text style={[styles.title, { color: colors.text }]}>Inbox</Text>
+        <Text style={[styles.title, { color: colors.text }]}>Messages</Text>
       </View>
 
       {conversations.length === 0 ? (
         <View style={styles.empty}>
+          <View style={[styles.emptyIconContainer, { backgroundColor: colors.card }]}>
+            <Ionicons name="chatbubbles-outline" size={moderateScale(48)} color={colors.secondaryText} />
+          </View>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>No messages yet</Text>
           <Text style={[styles.emptyText, { color: colors.secondaryText }]}>
-            No messages yet. Start a conversation!
+            Start a conversation with someone!
           </Text>
         </View>
       ) : (
@@ -364,8 +372,16 @@ export default function InboxScreen() {
           keyExtractor={(item) => item.partnerId}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            <RefreshControl 
+              refreshing={refreshing} 
+              onRefresh={onRefresh}
+              tintColor={colors.primary}
+              
+              colors={[colors.accent]}
+              progressBackgroundColor="#999"
+            />
           }
+          contentContainerStyle={styles.listContent}
         />
       )}
     </SafeAreaView>
@@ -373,49 +389,117 @@ export default function InboxScreen() {
 }
 
 // -----------------------------------------------------------------
-// Styles
+// Responsive Styles using both size-matters & responsive-screen
 // -----------------------------------------------------------------
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: {
-    padding: 16,
-    borderBottomWidth: 1,
+  container: { 
+    flex: 1 
   },
-  title: { fontSize: 20, fontWeight: '600' },
+  center: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    gap: hp('1%'),
+  },
+  loadingText: {
+    fontSize: moderateScale(15),
+    fontWeight: '500',
+  },
+  header: {
+    paddingHorizontal: wp('5%'),
+    paddingVertical: hp('2%'),
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  title: { 
+    fontSize: moderateScale(28), 
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  listContent: {
+    paddingVertical: hp('0.5%'),
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
-    borderBottomWidth: 1,
-    gap: 12,
+    paddingHorizontal: wp('5%'),
+    paddingVertical: hp('1.5%'),
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: wp('3%'),
   },
   avatarContainer: {
-    // No specific positioning needed here
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
   },
   avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: moderateScale(56),
+    height: moderateScale(56),
+    borderRadius: moderateScale(28),
     justifyContent: 'center',
     alignItems: 'center',
   },
-  info: { flex: 1 },
-  name: { fontSize: 16, fontWeight: '600' },
-  lastMsg: { fontSize: 14, marginTop: 2 },
-  timeContainer: {
-    // This container holds both the time and the dot, aligned vertically
-    alignSelf: 'flex-start', // Align to the top of the row
-    alignItems: 'flex-end',  // Align children to the right
-    paddingTop: 4, // Push down slightly to align with the top margin
-    gap: 4, // Space between time and dot
+  info: { 
+    flex: 1,
+    gap: hp('0.4%'),
   },
-  time: { fontSize: 12 },
+  name: { 
+    fontSize: moderateScale(16), 
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
+  lastMsg: { 
+    fontSize: moderateScale(14),
+    lineHeight: moderateScale(18),
+  },
+  timeContainer: {
+    alignSelf: 'flex-start',
+    alignItems: 'flex-end',
+    paddingTop: hp('0.3%'),
+    gap: hp('0.6%'),
+  },
+  time: { 
+    fontSize: moderateScale(12),
+    fontWeight: '500',
+  },
   unreadDot: {
     width: UNREAD_DOT_SIZE,
     height: UNREAD_DOT_SIZE,
     borderRadius: UNREAD_DOT_SIZE / 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
-  empty: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  emptyText: { fontSize: 16, textAlign: 'center' },
+  empty: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    paddingHorizontal: wp('10%'),
+    gap: hp('2%'),
+  },
+  emptyIconContainer: {
+    width: moderateScale(100),
+    height: moderateScale(100),
+    borderRadius: moderateScale(50),
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: hp('1%'),
+  },
+  emptyTitle: {
+    fontSize: moderateScale(20),
+    fontWeight: '700',
+  },
+  emptyText: { 
+    fontSize: moderateScale(15), 
+    textAlign: 'center',
+    lineHeight: moderateScale(22),
+  },
 });

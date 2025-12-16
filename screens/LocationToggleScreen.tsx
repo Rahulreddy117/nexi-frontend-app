@@ -1,5 +1,5 @@
 // components/LocationToggle.tsx
-import React, { useEffect, useCallback, useRef,useState } from 'react';
+import React, { useEffect, useCallback, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -16,7 +16,8 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeModules } from 'react-native';
 import Geolocation from '@react-native-community/geolocation';
-
+import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-native-responsive-screen';
 
 const { LocationModule } = NativeModules;
 
@@ -314,15 +315,23 @@ export default function LocationToggle({ enabled, onToggle }: LocationToggleProp
       <Text style={styles.toggleLabel}>
         {enabled ? 'Location ON' : 'Turn on Location'}
       </Text>
-      <Switch
-        trackColor={{ false: '#555', true: '#00C853' }}
-        thumbColor={enabled ? '#fff' : '#aaa'}
-        ios_backgroundColor="#555"
-        onValueChange={handleToggle}
-        value={enabled}
-        disabled={isLoadingToggle}
-      />
-      {isLoadingToggle && <ActivityIndicator size="small" color="#fff" style={styles.toggleLoader} />}
+      <View style={styles.switchRow}>
+        <Switch
+          trackColor={{ false: '#555', true: '#00C853' }}
+          thumbColor={enabled ? '#fff' : '#aaa'}
+          ios_backgroundColor="#555"
+          onValueChange={handleToggle}
+          value={enabled}
+          disabled={isLoadingToggle}
+        />
+        {isLoadingToggle && (
+          <ActivityIndicator 
+            size="small" 
+            color="#fff" 
+            style={styles.toggleLoader} 
+          />
+        )}
+      </View>
     </View>
   );
 }
@@ -333,19 +342,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 25,
-    height: 50,
-    paddingHorizontal: 16,
+    borderRadius: moderateScale(25),
+    height: hp('6%'),
+    paddingHorizontal: wp('4%'),
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
   toggleLabel: {
     color: '#fff',
     fontWeight: '600',
-    fontSize: 15,
+    fontSize: moderateScale(15),
     flex: 1,
   },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: wp('2%'),
+  },
   toggleLoader: {
-    marginLeft: 8,
+    marginLeft: wp('1%'),
   },
 });
