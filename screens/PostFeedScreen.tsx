@@ -53,9 +53,9 @@ const darkMapStyle = [
   },
 ];
 
+
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
-const MASTER_KEY = 'myMasterKey';
 
 export default function PostFeedScreen() {
   const { colors } = useTheme();
@@ -64,13 +64,30 @@ export default function PostFeedScreen() {
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const watchIdRef = useRef<number | null>(null);
   const isMounted = useRef(true);
+  const lastRegionRef = useRef<Region | null>(null); // ← persists region across navigation
   const [locationSharingEnabled, setLocationSharingEnabled] = useState(false);
   const [location, setLocation] = useState<{ lat: number; lon: number } | null>(null);
   const [mapRegion, setMapRegion] = useState<Region | null>(null);
   const [rooms, setRooms] = useState<any[]>([]);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
   const isFocused = useIsFocused();
-
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const metersToRadians = (m: number) => m / 6371000;
+
+  // Load session token
+  useEffect(() => {
+    const loadSessionToken = async () => {
+      try {
+        const token = await AsyncStorage.getItem('parseSessionToken');
+        setSessionToken(token);
+      } catch (err) {
+        console.error('Failed to load session token:', err);
+        setSessionToken(null);
+      }
+    };
+
+    loadSessionToken();
+  }, []);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -97,7 +114,7 @@ export default function PostFeedScreen() {
         method: 'GET',
         headers: {
           'X-Parse-Application-Id': APP_ID,
-          'X-Parse-Master-Key': MASTER_KEY,
+          'X-Parse-Session-Token': sessionToken!,
           'Content-Type': 'application/json',
         },
       });
@@ -131,7 +148,7 @@ export default function PostFeedScreen() {
         setRooms([]);
       }
     }
-  }, [isFocused]);
+  }, [isFocused, sessionToken]);
 
   // Sync location sharing state from storage on focus
   useFocusEffect(
@@ -178,6 +195,7 @@ export default function PostFeedScreen() {
       setLocation(null);
       setMapRegion(null);
       setRooms([]);
+      lastRegionRef.current = null; // reset saved region when location sharing turned off
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
@@ -194,15 +212,17 @@ export default function PostFeedScreen() {
         if (!isMounted.current) return;
         const { latitude, longitude } = pos.coords;
         setLocation({ lat: latitude, lon: longitude });
-        const initialRegion: Region = {
+
+        // Restore last region if available, else use close default zoom
+        const initialRegion: Region = lastRegionRef.current ?? {
           latitude,
           longitude,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
+          latitudeDelta: 0.5,
+          longitudeDelta: 0.5,
         };
         setMapRegion(initialRegion);
         if (mapRef.current) {
-          mapRef.current.animateToRegion(initialRegion, 1000);
+          mapRef.current.animateToRegion(initialRegion, 300);
         }
         if (isFocused) {
           fetchRoomsInViewport(latitude, longitude, 10000);
@@ -214,15 +234,17 @@ export default function PostFeedScreen() {
         const fallbackLon = -122.4194;
         if (!isMounted.current) return;
         setLocation({ lat: fallbackLat, lon: fallbackLon });
-        const initialRegion: Region = {
+
+        // Restore last region if available, else use close default zoom
+        const initialRegion: Region = lastRegionRef.current ?? {
           latitude: fallbackLat,
           longitude: fallbackLon,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
+          latitudeDelta: 0.005,
+          longitudeDelta: 0.005,
         };
         setMapRegion(initialRegion);
         if (mapRef.current) {
-          mapRef.current.animateToRegion(initialRegion, 1000);
+          mapRef.current.animateToRegion(initialRegion, 300);
         }
         if (isFocused) {
           fetchRoomsInViewport(fallbackLat, fallbackLon, 10000);
@@ -246,6 +268,7 @@ export default function PostFeedScreen() {
   const handleRegionChangeComplete = useCallback((region: Region) => {
     if (!isMounted.current || !isFocused) return;
     setMapRegion(region);
+    lastRegionRef.current = region; // ← save region every time user moves/zooms
     const { latitude, longitude, latitudeDelta } = region;
     const radius = latitudeDelta * 111000 / 2;
 
@@ -324,6 +347,36 @@ export default function PostFeedScreen() {
       >
         <Ionicons name="add" size={moderateScale(32)} color="#fff" />
       </TouchableOpacity>
+
+      {/* Small Refresh Button – bottom left */}
+      {locationSharingEnabled && mapRegion && (
+        <TouchableOpacity
+          style={styles.refreshButton}
+          onPress={async () => {
+            if (!mapRegion || isRefreshing || !sessionToken) return;
+
+            setIsRefreshing(true);
+            try {
+              await fetchRoomsInViewport(
+                mapRegion.latitude,
+                mapRegion.longitude,
+                15000
+              );
+            } catch (err) {
+              console.log('Manual refresh failed:', err);
+            } finally {
+              setIsRefreshing(false);
+            }
+          }}
+          disabled={isRefreshing}
+        >
+          <Ionicons
+            name={isRefreshing ? "refresh" : "refresh-outline"}
+            size={moderateScale(26)}
+            color={colors.iconColor || "#ffffff"}
+          />
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -358,6 +411,25 @@ const styles = StyleSheet.create({
     marginLeft: wp('2%'), 
     fontSize: moderateScale(13), 
     fontWeight: '500' 
+  },
+  refreshButton: {
+    position: 'absolute',
+    left: wp('5%'),
+    bottom: hp('4%'),
+    width: moderateScale(52),
+    height: moderateScale(52),
+    borderRadius: moderateScale(26),
+    backgroundColor: 'rgba(40, 40, 50, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.25)',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
+    zIndex: 999,
   },
   emptyContainer: { 
     flex: 1, 

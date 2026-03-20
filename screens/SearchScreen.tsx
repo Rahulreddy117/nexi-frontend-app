@@ -20,15 +20,12 @@ import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
 import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-native-responsive-screen';
 import { useTheme } from '../ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
 // ──────────────────────────────────────────────────────
 // CONFIG
 // ──────────────────────────────────────────────────────
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
-const MASTER_KEY = 'myMasterKey';
 const RECENT_SEARCHES_KEY = '@recent_searches';
-
 // ──────────────────────────────────────────────────────
 // TYPES
 // ──────────────────────────────────────────────────────
@@ -38,26 +35,23 @@ type User = {
   username: string;
   profilePicUrl?: string;
 };
-
 type RecentSearch = {
   auth0Id: string;
   username: string;
   profilePicUrl?: string;
   timestamp: number;
 };
-
 export default function SearchBarScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const { colors } = useTheme();
-
   const [query, setQuery] = useState(route.params?.initialQuery ?? '');
   const [results, setResults] = useState<User[]>([]);
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
   const isMounted = useRef(true);
-
   // ──────────────────────────────────────────────────────
   // LOAD RECENT SEARCHES FROM STORAGE
   // ──────────────────────────────────────────────────────
@@ -76,7 +70,22 @@ export default function SearchBarScreen() {
     };
     loadRecent();
   }, []);
-
+  // ──────────────────────────────────────────────────────
+  // LOAD SESSION TOKEN
+  // ──────────────────────────────────────────────────────
+  useEffect(() => {
+    const loadSession = async () => {
+      try {
+        const token = await AsyncStorage.getItem('parseSessionToken');
+        if (isMounted.current) {
+          setSessionToken(token);
+        }
+      } catch (e) {
+        console.error('Failed to load session token', e);
+      }
+    };
+    loadSession();
+  }, []);
   // ──────────────────────────────────────────────────────
   // SAVE TO RECENT SEARCHES
   // ──────────────────────────────────────────────────────
@@ -88,19 +97,16 @@ export default function SearchBarScreen() {
         profilePicUrl: user.profilePicUrl,
         timestamp: Date.now(),
       };
-
       const updated = [
         newEntry,
         ...recentSearches.filter((r) => r.auth0Id !== user.auth0Id),
       ].slice(0, 10);
-
       await AsyncStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(updated));
       if (isMounted.current) setRecentSearches(updated);
     } catch (e) {
       console.error('Failed to save recent search', e);
     }
   };
-
   // ──────────────────────────────────────────────────────
   // CLEAR ALL RECENT SEARCHES
   // ──────────────────────────────────────────────────────
@@ -112,7 +118,6 @@ export default function SearchBarScreen() {
       console.error('Failed to clear recent searches', e);
     }
   };
-
   // ──────────────────────────────────────────────────────
   // REMOVE SINGLE RECENT SEARCH
   // ──────────────────────────────────────────────────────
@@ -121,69 +126,72 @@ export default function SearchBarScreen() {
     setRecentSearches(updated);
     await AsyncStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(updated));
   };
-
   // ──────────────────────────────────────────────────────
   // PERFORM SEARCH API
   // ──────────────────────────────────────────────────────
-  const performSearch = async (searchTerm: string) => {
-    if (!searchTerm.trim()) {
-      setResults([]);
-      setError(null);
-      return;
-    }
-    setLoading(true);
+  const performSearch = useCallback(async (searchTerm: string) => {
+  if (!searchTerm.trim() || !sessionToken) {
+    setResults([]);
     setError(null);
-    try {
-      const where = {
-        username: {
-          $regex: `(?i)${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`,
-        },
-      };
-      const whereStr = encodeURIComponent(JSON.stringify(where));
-      const url = `${API_URL}/classes/UserProfile?where=${whereStr}&limit=8&keys=username,auth0Id,profilePicUrl`;
+    return;
+  }
 
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'X-Parse-Application-Id': APP_ID,
-          'X-Parse-Master-Key': MASTER_KEY,
-          'Content-Type': 'application/json',
-        },
-      });
 
-      if (!res.ok) {
-        const txt = await res.text();
-        throw new Error(`HTTP ${res.status}: ${txt}`);
-      }
 
-      const data = await res.json();
-      const users: User[] = data.results ?? [];
-      setResults(users);
-    } catch (e: any) {
-      console.error('Search error:', e);
-      setError(e.message ?? 'Something went wrong');
-      setResults([]);
-    } finally {
-      setLoading(false);
+  setLoading(true);
+  setError(null);
+
+  try {
+    const escaped = searchTerm.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    const where = {
+      username: {
+        $regex: `^${escaped}`,     // Starts with
+        $options: 'i',             // Case-insensitive
+      },
+    };
+
+    const whereStr = encodeURIComponent(JSON.stringify(where));
+    const url = `${API_URL}/classes/UserProfile?where=${whereStr}&limit=12&keys=username,auth0Id,profilePicUrl,objectId`;
+
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'X-Parse-Application-Id': APP_ID,
+        'X-Parse-Session-Token': sessionToken,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(`HTTP ${res.status}: ${txt}`);
     }
-  };
 
+    const data = await res.json();
+    const users: User[] = data.results ?? [];
+    setResults(users);
+  } catch (e: any) {
+    console.error('Search error:', e);
+    setError(e.message ?? 'Something went wrong');
+    setResults([]);
+  } finally {
+    setLoading(false);
+  }
+}, [sessionToken]);
   // ──────────────────────────────────────────────────────
   // DEBOUNCED SEARCH
   // ──────────────────────────────────────────────────────
-  const debouncedSearch = useCallback(debounce((term: string) => performSearch(term), 900), []);
-
+  const debouncedSearch = useCallback(debounce((term: string) => performSearch(term), 900), [performSearch]);
   useEffect(() => {
     debouncedSearch(query);
   }, [query, debouncedSearch]);
-
   useEffect(() => {
     return () => {
       debouncedSearch.cancel();
       isMounted.current = false;
     };
   }, [debouncedSearch]);
-
   // ──────────────────────────────────────────────────────
   // NAVIGATE TO PROFILE + SAVE RECENT
   // ──────────────────────────────────────────────────────
@@ -198,7 +206,6 @@ export default function SearchBarScreen() {
       profilePicUrl,
     });
   };
-
   // ──────────────────────────────────────────────────────
   // RENDER SEARCH RESULT ITEM
   // ──────────────────────────────────────────────────────
@@ -216,7 +223,7 @@ export default function SearchBarScreen() {
         </View>
       )}
       <View style={styles.userInfo}>
-        <Text 
+        <Text
           style={[styles.resultUsername, { color: colors.text }]}
           numberOfLines={1}
           ellipsizeMode="tail"
@@ -226,7 +233,6 @@ export default function SearchBarScreen() {
       </View>
     </TouchableOpacity>
   );
-
   // ──────────────────────────────────────────────────────
   // RENDER RECENT SEARCH ITEM
   // ──────────────────────────────────────────────────────
@@ -245,7 +251,7 @@ export default function SearchBarScreen() {
           </View>
         )}
         <View style={styles.recentTextContainer}>
-          <Text 
+          <Text
             style={[styles.recentUsername, { color: colors.text }]}
             numberOfLines={1}
             ellipsizeMode="tail"
@@ -254,7 +260,7 @@ export default function SearchBarScreen() {
           </Text>
         </View>
       </View>
-      <TouchableOpacity 
+      <TouchableOpacity
         onPress={() => removeRecentSearch(item.auth0Id)}
         style={styles.removeBtn}
         activeOpacity={0.7}
@@ -263,13 +269,11 @@ export default function SearchBarScreen() {
       </TouchableOpacity>
     </TouchableOpacity>
   );
-
   // ──────────────────────────────────────────────────────
   // RENDER RECENT SEARCHES SECTION
   // ──────────────────────────────────────────────────────
   const renderRecentSearches = () => {
     if (query.trim() || recentSearches.length === 0) return null;
-
     return (
       <>
         <View style={styles.recentHeader}>
@@ -278,7 +282,6 @@ export default function SearchBarScreen() {
             <Text style={[styles.clearText, { color: colors.primary }]}>Clear all</Text>
           </TouchableOpacity>
         </View>
-
         <FlatList
           data={recentSearches}
           keyExtractor={(item) => item.auth0Id}
@@ -289,7 +292,6 @@ export default function SearchBarScreen() {
       </>
     );
   };
-
   // ──────────────────────────────────────────────────────
   // MAIN RENDER
   // ──────────────────────────────────────────────────────
@@ -303,8 +305,8 @@ export default function SearchBarScreen() {
           borderColor: colors.border,
         }
       ]}>
-        <TouchableOpacity 
-          onPress={() => navigation.goBack()} 
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
           style={styles.backBtn}
           activeOpacity={0.7}
         >
@@ -322,8 +324,8 @@ export default function SearchBarScreen() {
           autoCorrect={false}
         />
         {query.length > 0 && (
-          <TouchableOpacity 
-            onPress={() => setQuery('')} 
+          <TouchableOpacity
+            onPress={() => setQuery('')}
             style={styles.clearBtn}
             activeOpacity={0.7}
           >
@@ -331,11 +333,9 @@ export default function SearchBarScreen() {
           </TouchableOpacity>
         )}
       </View>
-
       {/* CONTENT */}
       <View style={[styles.resultsContainer, { backgroundColor: colors.background }]}>
         {renderRecentSearches()}
-
         {query.trim() ? (
           loading ? (
             <View style={styles.centerContent}>
@@ -387,7 +387,6 @@ export default function SearchBarScreen() {
     </SafeAreaView>
   );
 }
-
 // ──────────────────────────────────────────────────────
 // RESPONSIVE STYLES using both size-matters & responsive-screen
 // ──────────────────────────────────────────────────────
@@ -411,20 +410,20 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  backBtn: { 
+  backBtn: {
     paddingRight: wp('2%'),
     paddingVertical: hp('1%'),
   },
   searchIcon: {
     marginRight: wp('2%'),
   },
-  input: { 
-    flex: 1, 
-    fontSize: moderateScale(16), 
+  input: {
+    flex: 1,
+    fontSize: moderateScale(16),
     fontWeight: '500',
     paddingVertical: hp('1%'),
   },
-  clearBtn: { 
+  clearBtn: {
     paddingLeft: wp('2%'),
     paddingVertical: hp('1%'),
   },
@@ -433,7 +432,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: wp('4%'),
     marginTop: hp('2%'),
   },
-
   // Recent Header
   recentHeader: {
     flexDirection: 'row',
@@ -452,7 +450,6 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(14),
     fontWeight: '600',
   },
-
   // Recent Row
   recentRow: {
     flexDirection: 'row',
@@ -490,7 +487,6 @@ const styles = StyleSheet.create({
   removeBtn: {
     padding: scale(4),
   },
-
   // Search Results
   resultsListContent: {
     paddingTop: hp('0.5%'),
@@ -522,7 +518,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 0.2,
   },
-
   // Center Content (Empty States / Loading)
   centerContent: {
     alignItems: 'center',

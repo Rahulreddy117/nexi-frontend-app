@@ -18,7 +18,6 @@ import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-nat
 
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
-const MASTER_KEY = 'myMasterKey';
 
 export default function PersonalInfo() {
   const { colors } = useTheme();
@@ -28,12 +27,17 @@ export default function PersonalInfo() {
     email?: string;
     profilePicUrl?: string;
   }>({});
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
       try {
-        const auth0Id = await AsyncStorage.getItem('auth0Id');
-        if (!auth0Id) {
+        const [auth0Id, token] = await Promise.all([
+          AsyncStorage.getItem('auth0Id'),
+          AsyncStorage.getItem('parseSessionToken'),
+        ]);
+        setSessionToken(token);
+        if (!auth0Id || !token) {
           Alert.alert('Error', 'Not logged in');
           setLoading(false);
           return;
@@ -46,7 +50,7 @@ export default function PersonalInfo() {
           {
             headers: {
               'X-Parse-Application-Id': APP_ID,
-              'X-Parse-Master-Key': MASTER_KEY,
+              'X-Parse-Session-Token': token,
             },
           }
         );

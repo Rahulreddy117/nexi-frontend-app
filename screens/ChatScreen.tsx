@@ -25,7 +25,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const SOCKET_URL = 'https://nexi-server.onrender.com';
 const APP_ID = 'myAppId';
-const MASTER_KEY = 'myMasterKey';
+
 
 interface Message {
   objectId: string;
@@ -57,54 +57,71 @@ export default function ChatScreen() {
   const [targetBlocked, setTargetBlocked] = useState<string[]>([]);
 
   const flatListRef = useRef<FlatList>(null);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
 
   // 1. Load currentUserId FIRST
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      const id = await AsyncStorage.getItem('auth0Id');
-      if (mounted) {
-        console.log('Loaded currentUserId:', id);
-        setCurrentUserId(id);
-      }
-    })();
-    return () => { mounted = false; };
-  }, []);
+  // Load currentUserId AND sessionToken
+useEffect(() => {
+  let mounted = true;
+  (async () => {
+    const [id, token] = await Promise.all([
+      AsyncStorage.getItem('auth0Id'),
+      AsyncStorage.getItem('parseSessionToken'),
+    ]);
+
+    if (mounted) {
+      console.log('Loaded currentUserId:', id);
+      console.log('Loaded sessionToken:', token ? 'Yes' : 'No');
+      setCurrentUserId(id);
+      setSessionToken(token);
+    }
+  })();
+  return () => { mounted = false; };
+}, []);
 
   // New: Load blocked lists
   useEffect(() => {
-    const loadBlockedLists = async () => {
-      if (!currentUserId) return;
+  const loadBlockedLists = async () => {
+    if (!currentUserId || !sessionToken) return;
 
-      try {
-        // Load my blocked list
-        const whereMy = { auth0Id: currentUserId! };
-        const whereStrMy = encodeURIComponent(JSON.stringify(whereMy));
-        const myProfileRes = await fetch(`${API_URL}/classes/UserProfile?where=${whereStrMy}&limit=1`, {
-          headers: { 'X-Parse-Application-Id': APP_ID, 'X-Parse-Master-Key': MASTER_KEY },
-        });
-        if (myProfileRes.ok) {
-          const myData = await myProfileRes.json();
-          if (myData.results[0]) setMyBlocked(myData.results[0].blocked || []);
-        }
+    try {
+      const commonHeaders = {
+        'X-Parse-Application-Id': APP_ID,
+        'X-Parse-Session-Token': sessionToken,
+      };
 
-        // Load target's blocked list
-        const whereTarget = { auth0Id: receiverId };
-        const whereStrTarget = encodeURIComponent(JSON.stringify(whereTarget));
-        const targetProfileRes = await fetch(`${API_URL}/classes/UserProfile?where=${whereStrTarget}&limit=1`, {
-          headers: { 'X-Parse-Application-Id': APP_ID, 'X-Parse-Master-Key': MASTER_KEY },
-        });
-        if (targetProfileRes.ok) {
-          const targetData = await targetProfileRes.json();
-          if (targetData.results[0]) setTargetBlocked(targetData.results[0].blocked || []);
-        }
-      } catch (err) {
-        console.error('Failed to load blocked lists:', err);
+      // My blocked list
+      const whereMy = { auth0Id: currentUserId };
+      const whereStrMy = encodeURIComponent(JSON.stringify(whereMy));
+      const myProfileRes = await fetch(
+        `${API_URL}/classes/UserProfile?where=${whereStrMy}&limit=1`,
+        { headers: commonHeaders }
+      );
+
+      if (myProfileRes.ok) {
+        const myData = await myProfileRes.json();
+        if (myData.results[0]) setMyBlocked(myData.results[0].blocked || []);
       }
-    };
 
-    loadBlockedLists();
-  }, [currentUserId, receiverId]);
+      // Target's blocked list
+      const whereTarget = { auth0Id: receiverId };
+      const whereStrTarget = encodeURIComponent(JSON.stringify(whereTarget));
+      const targetProfileRes = await fetch(
+        `${API_URL}/classes/UserProfile?where=${whereStrTarget}&limit=1`,
+        { headers: commonHeaders }
+      );
+
+      if (targetProfileRes.ok) {
+        const targetData = await targetProfileRes.json();
+        if (targetData.results[0]) setTargetBlocked(targetData.results[0].blocked || []);
+      }
+    } catch (err) {
+      console.error('Failed to load blocked lists:', err);
+    }
+  };
+
+  loadBlockedLists();
+}, [currentUserId, receiverId, sessionToken]); // ← Add sessionToken dependency
 
   // 2. Socket.IO — Real-time
   useEffect(() => {
@@ -159,48 +176,54 @@ export default function ChatScreen() {
 
   // 4. Fetch messages (no order, we sort client-side)
   const fetchMessages = useCallback(async () => {
-    if (!currentUserId) return;
+  if (!currentUserId || !sessionToken) return;
 
-    setLoading(true);
+  setLoading(true);
 
-    const where = {
-      $or: [
-        { senderId: currentUserId!, receiverId },
-        { senderId: receiverId, receiverId: currentUserId! },
-      ],
-    };
+  const where = {
+    $or: [
+      { senderId: currentUserId!, receiverId },
+      { senderId: receiverId, receiverId: currentUserId! },
+    ],
+  };
 
-    const whereStr = encodeURIComponent(JSON.stringify(where));
+  const whereStr = encodeURIComponent(JSON.stringify(where));
 
-    try {
-      console.log('Fetching messages...');
-      const res = await fetch(
-        `${API_URL}/classes/Message?where=${whereStr}&limit=100`,
-        {
-          headers: {
-            'X-Parse-Application-Id': APP_ID,
-            'X-Parse-Master-Key': MASTER_KEY,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
+  try {
+    console.log('Fetching messages...');
+    const res = await fetch(
+      `${API_URL}/classes/Message?where=${whereStr}&limit=100&order=-createdAt`,
+      {
+        headers: {
+          'X-Parse-Application-Id': APP_ID,
+          'X-Parse-Session-Token': sessionToken!,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
 
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-      const { results = [] } = await res.json();
-      console.log('Fetched messages:', results.length);
-
-      const sorted = results.sort((a: any, b: any) =>
-        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-      );
-
-      setMessages(sorted);
-    } catch (e) {
-      console.error('fetchMessages error:', e);
-    } finally {
-      setLoading(false);
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || `HTTP ${res.status}`);
     }
-  }, [currentUserId, receiverId]);
+
+        const { results = [] } = await res.json();
+    console.log('Fetched messages:', results.length);
+
+    // Server sends newest first because of &order=-createdAt
+    // So we reverse it to get oldest → newest (correct chat order)
+    const sorted = [...results].reverse();
+
+    setMessages(sorted);
+
+
+  } catch (e) {
+    console.error('fetchMessages error:', e);
+    Alert.alert('Error', 'Failed to load messages');
+  } finally {
+    setLoading(false);
+  }
+}, [currentUserId, receiverId, sessionToken]);
 
   // 5. Refetch on focus (only if no messages)
   useFocusEffect(
@@ -483,3 +506,5 @@ const styles = StyleSheet.create({
   },
  
 });
+
+

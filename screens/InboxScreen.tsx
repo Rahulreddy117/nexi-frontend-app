@@ -19,7 +19,6 @@ import { useTheme } from '../ThemeContext';
 
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
-const MASTER_KEY = 'myMasterKey';
 
 const UNREAD_DOT_SIZE = moderateScale(10);
 
@@ -79,6 +78,7 @@ export default function InboxScreen() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
 
   // -------------------------------------------------------------
   // 1. Load current user (auth0Id) once
@@ -88,6 +88,21 @@ export default function InboxScreen() {
       const id = await AsyncStorage.getItem('auth0Id');
       setCurrentUserId(id);
     })();
+  }, []);
+
+  // Load sessionToken
+  useEffect(() => {
+    const loadSessionToken = async () => {
+      try {
+        const token = await AsyncStorage.getItem('parseSessionToken');
+        setSessionToken(token);
+      } catch (err) {
+        console.error('Failed to load session token:', err);
+        setSessionToken(null);
+      }
+    };
+
+    loadSessionToken();
   }, []);
 
   // -------------------------------------------------------------
@@ -125,7 +140,7 @@ export default function InboxScreen() {
         {
           headers: {
             'X-Parse-Application-Id': APP_ID,
-            'X-Parse-Master-Key': MASTER_KEY,
+            'X-Parse-Session-Token': sessionToken!,
             'Content-Type': 'application/json',
           },
         }
@@ -171,7 +186,7 @@ export default function InboxScreen() {
   // 3. Build inbox
   // -------------------------------------------------------------
   const fetchInbox = useCallback(async (forceRefresh = false) => {
-    if (!currentUserId) return;
+    if (!currentUserId || !sessionToken) return;
 
     if (forceRefresh) setRefreshing(true);
     else setLoading(true);
@@ -200,7 +215,7 @@ export default function InboxScreen() {
         {
           headers: {
             'X-Parse-Application-Id': APP_ID,
-            'X-Parse-Master-Key': MASTER_KEY,
+            'X-Parse-Session-Token': sessionToken,
             'Content-Type': 'application/json',
           },
         }
@@ -251,14 +266,14 @@ export default function InboxScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [currentUserId]);
+  }, [currentUserId, sessionToken]);
 
   // -------------------------------------------------------------
   // 4. Refetch on focus (Crucial: sets the `lastInboxSeen` time)
   // -------------------------------------------------------------
   useFocusEffect(
     useCallback(() => {
-      if (currentUserId) {
+      if (currentUserId && sessionToken) {
         if (conversations.length === 0) {
           fetchInbox().then(() => {
             AsyncStorage.setItem(`lastInboxSeen_${currentUserId}`, new Date().toISOString());
@@ -267,7 +282,7 @@ export default function InboxScreen() {
           AsyncStorage.setItem(`lastInboxSeen_${currentUserId}`, new Date().toISOString());
         }
       }
-    }, [currentUserId, fetchInbox, conversations.length])
+    }, [currentUserId, sessionToken, fetchInbox, conversations.length])
   );
 
   // -------------------------------------------------------------

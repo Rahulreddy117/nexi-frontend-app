@@ -46,7 +46,6 @@ import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-nat
 
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
-const MASTER_KEY = 'myMasterKey';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator();
@@ -59,14 +58,14 @@ interface Auth0IdToken {
   email_verified: boolean;
 }
 
-async function queryUser(auth0Id: string): Promise<any | null> {
+async function queryUser(auth0Id: string, sessionToken: string): Promise<any | null> {
   const where = { auth0Id };
   const whereStr = encodeURIComponent(JSON.stringify(where));
   const res = await fetch(`${API_URL}/classes/UserProfile?where=${whereStr}&limit=1`, {
     method: 'GET',
     headers: {
       'X-Parse-Application-Id': APP_ID,
-      'X-Parse-Master-Key': MASTER_KEY,
+      'X-Parse-Session-Token': sessionToken,
       'Content-Type': 'application/json',
     },
   });
@@ -91,7 +90,11 @@ function BottomTabsNavigator({ profilePicUrl }: { profilePicUrl?: string | null 
   const fetchUnreadCount = async () => {
     try {
       const auth0Id = await AsyncStorage.getItem('auth0Id');
-      if (!auth0Id) return;
+      const sessionToken = await AsyncStorage.getItem('parseSessionToken');
+      if (!auth0Id || !sessionToken) {
+        setUnreadCount(0);
+        return;
+      }
       const res = await fetch(
         `${API_URL}/classes/FollowNotification?where=${encodeURIComponent(
           JSON.stringify({ followedId: auth0Id, read: false })
@@ -99,15 +102,22 @@ function BottomTabsNavigator({ profilePicUrl }: { profilePicUrl?: string | null 
         {
           headers: {
             'X-Parse-Application-Id': APP_ID,
-            'X-Parse-Master-Key': MASTER_KEY,
+            'X-Parse-Session-Token': sessionToken,
+            'Content-Type': 'application/json',
           },
         }
       );
-      const data = await res.json();
-      const count = data.count || 0;
-      setUnreadCount(count);
+      if (res.ok) {
+        const data = await res.json();
+        const count = data.count || 0;
+        setUnreadCount(count);
+      } else {
+        console.error('Failed to fetch unread count:', await res.json());
+        setUnreadCount(0);
+      }
     } catch (err) {
       console.error('Badge fetch error:', err);
+      setUnreadCount(0);
     }
   };
 
@@ -275,7 +285,8 @@ export default function App() {
 
       // Rest of existing checkAuth logic
       const token = await EncryptedStorage.getItem('idToken');
-      if (!token) {
+      const sessionToken = await AsyncStorage.getItem('parseSessionToken');
+      if (!token || !sessionToken) {
         setInitialRouteName('Login');
         setIsLoading(false);
         return;
@@ -283,7 +294,7 @@ export default function App() {
       try {
         const userInfo: Auth0IdToken = jwtDecode(token);
         await AsyncStorage.setItem('auth0Id', userInfo.sub);
-        const snap = await queryUser(userInfo.sub);
+        const snap = await queryUser(userInfo.sub, sessionToken);
         if (snap) {
           await AsyncStorage.setItem('parseObjectId', snap.objectId);
           setProfilePicUrl(snap.profilePicUrl || userInfo.picture);
@@ -294,6 +305,7 @@ export default function App() {
       } catch (e) {
         console.error('Login error:', e);
         await EncryptedStorage.removeItem('idToken');
+        await AsyncStorage.removeItem('parseSessionToken');
         setInitialRouteName('Login');
       } finally {
         setIsLoading(false);
@@ -336,6 +348,10 @@ export default function App() {
           <Stack.Screen name="JoinedRooms" component={JoinedRoomsScreen} />
           <Stack.Screen name="PersonalInfo" component={PersonalInfo} />
           <Stack.Screen name="BlockedUsers" component={BlockedUsersScreen} />
+       
+          
+    
+
         </Stack.Navigator>
       </NavigationContainer>
     </ThemeProvider>

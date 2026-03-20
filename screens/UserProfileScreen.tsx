@@ -27,45 +27,53 @@ type UserProfileRouteProp = RouteProp<RootStackParamList, 'UserProfile'>;
 
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
-const MASTER_KEY = 'myMasterKey';
-
-const HEADERS = {
-  'X-Parse-Application-Id': APP_ID,
-  'X-Parse-Master-Key': MASTER_KEY,
-  'Content-Type': 'application/json',
-};
 
 const { width } = Dimensions.get('window');
 const numColumns = 3;
 const itemWidth = (width - wp('8%') - (numColumns - 1) * scale(6)) / numColumns;
 
-async function queryUserByAuth0Id(auth0Id: string): Promise<any | null> {
+async function queryUserByAuth0Id(auth0Id: string, sessionToken: string): Promise<any | null> {
   const where = { auth0Id };
   const whereStr = encodeURIComponent(JSON.stringify(where));
+  const headers = {
+    'X-Parse-Application-Id': APP_ID,
+    'X-Parse-Session-Token': sessionToken,
+    'Content-Type': 'application/json',
+  };
   const res = await fetch(`${API_URL}/classes/UserProfile?where=${whereStr}&limit=1`, {
     method: 'GET',
-    headers: HEADERS,
+    headers,
   });
   if (!res.ok) return null;
   const data = await res.json();
   return data.results?.[0] ?? null;
 }
 
-async function queryUserByObjectId(objectId: string): Promise<any | null> {
+async function queryUserByObjectId(objectId: string, sessionToken: string): Promise<any | null> {
+  const headers = {
+    'X-Parse-Application-Id': APP_ID,
+    'X-Parse-Session-Token': sessionToken,
+    'Content-Type': 'application/json',
+  };
   const res = await fetch(`${API_URL}/classes/UserProfile/${objectId}`, {
     method: 'GET',
-    headers: HEADERS,
+    headers,
   });
   if (!res.ok) return null;
   return await res.json();
 }
 
-async function isFollowing(myId: string, otherId: string): Promise<any | null> {
+async function isFollowing(myId: string, otherId: string, sessionToken: string): Promise<any | null> {
   const where = { followerId: myId, followingId: otherId };
   const whereStr = encodeURIComponent(JSON.stringify(where));
+  const headers = {
+    'X-Parse-Application-Id': APP_ID,
+    'X-Parse-Session-Token': sessionToken,
+    'Content-Type': 'application/json',
+  };
   const res = await fetch(`${API_URL}/classes/Follow?where=${whereStr}&limit=1`, {
     method: 'GET',
-    headers: HEADERS,
+    headers,
   });
   if (!res.ok) return null;
   const data = await res.json();
@@ -105,6 +113,7 @@ export default function UserProfileScreen() {
   const [posts, setPosts] = useState<string[]>([]);
   const [postsLoading, setPostsLoading] = useState(true);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
 
   // Block system states
   const [myBlocked, setMyBlocked] = useState<string[]>([]);
@@ -116,7 +125,7 @@ export default function UserProfileScreen() {
   // NEW: Report states
   const [reportModalVisible, setReportModalVisible] = useState(false);
 
-  async function fetchUserPosts(userParseObjectId: string) {
+  async function fetchUserPosts(userParseObjectId: string, sessionToken: string) {
     try {
       const where = {
         user: {
@@ -126,9 +135,14 @@ export default function UserProfileScreen() {
         },
       };
       const whereStr = encodeURIComponent(JSON.stringify(where));
+      const headers = {
+        'X-Parse-Application-Id': APP_ID,
+        'X-Parse-Session-Token': sessionToken,
+        'Content-Type': 'application/json',
+      };
       const response = await fetch(
         `${API_URL}/classes/Post?where=${whereStr}&order=-createdAt&limit=50`,
-        { method: 'GET', headers: HEADERS }
+        { method: 'GET', headers }
       );
       if (!response.ok) throw new Error('Failed to fetch posts');
       const data = await response.json();
@@ -144,21 +158,30 @@ export default function UserProfileScreen() {
 
   useEffect(() => {
     const loadMyData = async () => {
-      const auth0Id = await AsyncStorage.getItem('auth0Id');
-      const parseId = await AsyncStorage.getItem('parseObjectId');
+      const [auth0Id, parseId, token] = await Promise.all([
+        AsyncStorage.getItem('auth0Id'),
+        AsyncStorage.getItem('parseObjectId'),
+        AsyncStorage.getItem('parseSessionToken'),
+      ]);
       setMyId(auth0Id);
       setMyObjectId(parseId);
+      setSessionToken(token);
     };
     loadMyData();
   }, []);
 
   useEffect(() => {
     const loadMyFullData = async () => {
-      if (!myObjectId) return;
+      if (!myObjectId || !sessionToken) return;
       try {
+        const headers = {
+          'X-Parse-Application-Id': APP_ID,
+          'X-Parse-Session-Token': sessionToken,
+          'Content-Type': 'application/json',
+        };
         const res = await fetch(`${API_URL}/classes/UserProfile/${myObjectId}`, {
           method: 'GET',
-          headers: HEADERS,
+          headers,
         });
         if (res.ok) {
           const data = await res.json();
@@ -169,16 +192,17 @@ export default function UserProfileScreen() {
       }
     };
     loadMyFullData();
-  }, [myObjectId]);
+  }, [myObjectId, sessionToken]);
 
   useEffect(() => {
     const fetchFullProfile = async () => {
+      if (!sessionToken) return;
       try {
         let userData: any = null;
         if (initialObjectId) {
-          userData = await queryUserByObjectId(initialObjectId);
+          userData = await queryUserByObjectId(initialObjectId, sessionToken);
         } else if (initialUserId) {
-          userData = await queryUserByAuth0Id(initialUserId);
+          userData = await queryUserByAuth0Id(initialUserId, sessionToken);
         }
         if (userData) {
           setUsername(userData.username || initialUsername);
@@ -190,7 +214,7 @@ export default function UserProfileScreen() {
           setObjectId(userData.objectId);
           setUserAuth0Id(userData.auth0Id);
           setTargetBlocked(userData.blocked || []);
-          await fetchUserPosts(userData.objectId);
+          await fetchUserPosts(userData.objectId, sessionToken);
         }
       } catch (err) {
         console.error('Failed to fetch full profile:', err);
@@ -198,9 +222,9 @@ export default function UserProfileScreen() {
         setLoading(false);
       }
     };
-    if (initialObjectId || initialUserId) fetchFullProfile();
-    else setLoading(false);
-  }, [initialObjectId, initialUserId]);
+    if ((initialObjectId || initialUserId) && sessionToken) fetchFullProfile();
+    else if (sessionToken) setLoading(false);
+  }, [initialObjectId, initialUserId, sessionToken]);
 
   useEffect(() => {
     if (isMyProfile) {
@@ -222,16 +246,16 @@ export default function UserProfileScreen() {
   useEffect(() => {
     if (myId && userAuth0Id && myId === userAuth0Id) {
       setIsMyProfile(true);
-    } else if (myId && userAuth0Id && objectId) {
-      isFollowing(myId, userAuth0Id).then(f => {
+    } else if (myId && userAuth0Id && objectId && sessionToken) {
+      isFollowing(myId, userAuth0Id, sessionToken).then(f => {
         setFollowing(!!f);
         setFollowObjectId(f?.objectId || null);
       });
     }
-  }, [myId, userAuth0Id, objectId]);
+  }, [myId, userAuth0Id, objectId, sessionToken]);
 
   const handleBlock = async () => {
-    if (!myObjectId || !userAuth0Id || loadingBlock) return;
+    if (!myObjectId || !userAuth0Id || !sessionToken || loadingBlock) return;
 
     Alert.alert(
       'Block User',
@@ -244,9 +268,14 @@ export default function UserProfileScreen() {
           onPress: async () => {
             setLoadingBlock(true);
             try {
+              const headers = {
+                'X-Parse-Application-Id': APP_ID,
+                'X-Parse-Session-Token': sessionToken,
+                'Content-Type': 'application/json',
+              };
               await fetch(`${API_URL}/classes/UserProfile/${myObjectId}`, {
                 method: 'PUT',
-                headers: HEADERS,
+                headers,
                 body: JSON.stringify({
                   blocked: {
                     __op: 'AddUnique',
@@ -257,7 +286,7 @@ export default function UserProfileScreen() {
 
               const myRes = await fetch(`${API_URL}/classes/UserProfile/${myObjectId}`, {
                 method: 'GET',
-                headers: HEADERS,
+                headers,
               });
               if (myRes.ok) {
                 const myData = await myRes.json();
@@ -291,19 +320,24 @@ export default function UserProfileScreen() {
   };
 
   const handleFollow = async () => {
-    if (!myId || !myObjectId || !objectId || !userAuth0Id || loadingFollow) return;
+    if (!myId || !myObjectId || !objectId || !userAuth0Id || !sessionToken || loadingFollow) return;
     setLoadingFollow(true);
     try {
+      const headers = {
+        'X-Parse-Application-Id': APP_ID,
+        'X-Parse-Session-Token': sessionToken,
+        'Content-Type': 'application/json',
+      };
       if (following) {
         if (followObjectId) {
-          await fetch(`${API_URL}/classes/Follow/${followObjectId}`, { method: 'DELETE', headers: HEADERS });
+          await fetch(`${API_URL}/classes/Follow/${followObjectId}`, { method: 'DELETE', headers });
         }
         await fetch(`${API_URL}/classes/UserProfile/${myObjectId}`, {
-          method: 'PUT', headers: HEADERS,
+          method: 'PUT', headers,
           body: JSON.stringify({ followingCount: { __op: 'Increment', amount: -1 } }),
         });
         await fetch(`${API_URL}/classes/UserProfile/${objectId}`, {
-          method: 'PUT', headers: HEADERS,
+          method: 'PUT', headers,
           body: JSON.stringify({ followersCount: { __op: 'Increment', amount: -1 } }),
         });
         const notifRes = await fetch(
@@ -311,11 +345,11 @@ export default function UserProfileScreen() {
             followerId: myId,
             followedId: userAuth0Id,
           }))}`,
-          { headers: HEADERS }
+          { headers }
         );
         const notifs = await notifRes.json();
         for (const n of notifs.results) {
-          await fetch(`${API_URL}/classes/FollowNotification/${n.objectId}`, { method: 'DELETE', headers: HEADERS });
+          await fetch(`${API_URL}/classes/FollowNotification/${n.objectId}`, { method: 'DELETE', headers });
         }
         setFollowersCount(p => p - 1);
         setFollowing(false);
@@ -323,24 +357,24 @@ export default function UserProfileScreen() {
       } else {
         const followRes = await fetch(`${API_URL}/classes/Follow`, {
           method: 'POST',
-          headers: HEADERS,
+          headers,
           body: JSON.stringify({ followerId: myId, followingId: userAuth0Id }),
         });
         const newFollow = await followRes.json();
 
         await fetch(`${API_URL}/classes/UserProfile/${myObjectId}`, {
-          method: 'PUT', headers: HEADERS,
+          method: 'PUT', headers,
           body: JSON.stringify({ followingCount: { __op: 'Increment', amount: 1 } }),
         });
 
         await fetch(`${API_URL}/classes/UserProfile/${objectId}`, {
-          method: 'PUT', headers: HEADERS,
+          method: 'PUT', headers,
           body: JSON.stringify({ followersCount: { __op: 'Increment', amount: 1 } }),
         });
-        const followerProfile = await queryUserByAuth0Id(myId);
+        const followerProfile = await queryUserByAuth0Id(myId, sessionToken);
         await fetch(`${API_URL}/classes/FollowNotification`, {
           method: 'POST',
-          headers: HEADERS,
+          headers,
           body: JSON.stringify({
             followerId: myId,
             followedId: userAuth0Id,

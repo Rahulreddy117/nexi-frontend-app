@@ -1,5 +1,5 @@
 // screens/UserUploadPost.tsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,7 @@ import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-nat
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../types/navigation';
 import { useTheme } from '../ThemeContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type UserUploadPostRouteProp = RouteProp<RootStackParamList, 'UserUploadPost'>;
 
@@ -27,20 +28,18 @@ const UPLOAD_PRESET = 'ml_default';
 
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
-const MASTER_KEY = 'myMasterKey';
 
-const HEADERS = {
-  'X-Parse-Application-Id': APP_ID,
-  'X-Parse-Master-Key': MASTER_KEY,
-  'Content-Type': 'application/json',
-};
-
-async function getUserParseObjectId(auth0Id: string): Promise<string> {
+async function getUserParseObjectId(auth0Id: string, sessionToken: string): Promise<string> {
   const where = { auth0Id };
   const whereStr = encodeURIComponent(JSON.stringify(where));
+  const headers = {
+    'X-Parse-Application-Id': APP_ID,
+    'X-Parse-Session-Token': sessionToken,
+    'Content-Type': 'application/json',
+  };
   const response = await fetch(
     `${API_URL}/classes/UserProfile?where=${whereStr}&limit=1`,
-    { method: 'GET', headers: HEADERS }
+    { method: 'GET', headers }
   );
   if (!response.ok) throw new Error('Failed to fetch user');
   const data = await response.json();
@@ -76,6 +75,15 @@ export default function UserUploadPostScreen() {
   const { auth0Id } = route.params;
   const [image, setImage] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadSessionToken = async () => {
+      const token = await AsyncStorage.getItem('parseSessionToken');
+      setSessionToken(token);
+    };
+    loadSessionToken();
+  }, []);
 
   const pickImage = () => {
     ImagePicker.openPicker({
@@ -95,7 +103,7 @@ export default function UserUploadPostScreen() {
   };
 
   const handleUpload = async () => {
-    if (!image) {
+    if (!image || !sessionToken) {
       Alert.alert('Error', 'Please select an image first');
       return;
     }
@@ -106,7 +114,7 @@ export default function UserUploadPostScreen() {
       const cloudinaryUrl = await uploadToCloudinary(image);
 
       // 2. Get user objectId
-      const userObjectId = await getUserParseObjectId(auth0Id);
+      const userObjectId = await getUserParseObjectId(auth0Id, sessionToken);
 
       // 3. Save post directly (showInFeed defaults to true)
       const postData = {
@@ -119,9 +127,14 @@ export default function UserUploadPostScreen() {
         showInFeed: true,
       };
 
+      const headers = {
+        'X-Parse-Application-Id': APP_ID,
+        'X-Parse-Session-Token': sessionToken,
+        'Content-Type': 'application/json',
+      };
       const response = await fetch(`${API_URL}/classes/Post`, {
         method: 'POST',
-        headers: HEADERS,
+        headers,
         body: JSON.stringify(postData),
       });
 

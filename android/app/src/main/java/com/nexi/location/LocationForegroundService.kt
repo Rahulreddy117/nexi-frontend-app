@@ -1,3 +1,4 @@
+// LocationForegroundService.kt
 package com.nexi.location
 
 import android.app.Notification
@@ -27,13 +28,10 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 
 class LocationForegroundService : Service() {
-
     private lateinit var fusedClient: FusedLocationProviderClient
     private var locationCallback: LocationCallback? = null
-
     private val serviceScope = CoroutineScope(Dispatchers.IO)
     private var updateJob: Job? = null
-
     private val httpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
@@ -41,57 +39,47 @@ class LocationForegroundService : Service() {
             .writeTimeout(15, TimeUnit.SECONDS)
             .build()
     }
-
     override fun onBind(intent: Intent?): IBinder? = null
-
     override fun onCreate() {
         super.onCreate()
         fusedClient = LocationServices.getFusedLocationProviderClient(this)
         createNotificationChannel()
     }
-
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val objectId = intent?.getStringExtra(EXTRA_OBJECT_ID) ?: return START_NOT_STICKY
         val serverUrl = intent.getStringExtra(EXTRA_SERVER_URL) ?: return START_NOT_STICKY
         val appId = intent.getStringExtra(EXTRA_APP_ID) ?: return START_NOT_STICKY
-        val masterKey = intent.getStringExtra(EXTRA_MASTER_KEY) ?: return START_NOT_STICKY
-
+        val sessionToken = intent.getStringExtra(EXTRA_SESSION_TOKEN) ?: return START_NOT_STICKY
         val notification = buildNotification()
         startForeground(NOTIFICATION_ID, notification)
-
-        startLocationUpdates(objectId, serverUrl, appId, masterKey)
+        startLocationUpdates(objectId, serverUrl, appId, sessionToken)
         return START_STICKY
     }
-
     override fun onDestroy() {
         super.onDestroy()
         stopLocationUpdates()
     }
-
     private fun startLocationUpdates(
         objectId: String,
         serverUrl: String,
         appId: String,
-        masterKey: String
+        sessionToken: String
     ) {
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 10_000L)
             .setMinUpdateIntervalMillis(10_000L)
             .setWaitForAccurateLocation(false)
             .build()
-
         locationCallback = object : LocationCallback() {
             private var lastSentMs: Long = 0L
-
             override fun onLocationResult(result: LocationResult) {
                 val location: Location = result.lastLocation ?: return
                 val now = System.currentTimeMillis()
                 if (now - lastSentMs >= 9_500L) { // throttle ~10s
                     lastSentMs = now
-                    sendUpdate(objectId, serverUrl, appId, masterKey, location)
+                    sendUpdate(objectId, serverUrl, appId, sessionToken, location)
                 }
             }
         }
-
         try {
             fusedClient.requestLocationUpdates(
                 request,
@@ -102,7 +90,6 @@ class LocationForegroundService : Service() {
             // Missing permission; stop service silently
             stopSelf()
         }
-
         // Safety: also poll last known every 10s in case callbacks stall
         updateJob?.cancel()
         updateJob = serviceScope.launch {
@@ -110,7 +97,7 @@ class LocationForegroundService : Service() {
                 try {
                     val last = fusedClient.awaitSafe()
                     if (last != null) {
-                        sendUpdate(objectId, serverUrl, appId, masterKey, last)
+                        sendUpdate(objectId, serverUrl, appId, sessionToken, last)
                     }
                 } catch (_: SecurityException) {
                     stopSelf()
@@ -120,19 +107,17 @@ class LocationForegroundService : Service() {
             }
         }
     }
-
     private fun stopLocationUpdates() {
         locationCallback?.let { fusedClient.removeLocationUpdates(it) }
         locationCallback = null
         updateJob?.cancel()
         updateJob = null
     }
-
     private fun sendUpdate(
         objectId: String,
         serverUrl: String,
         appId: String,
-        masterKey: String,
+        sessionToken: String,
         location: Location
     ) {
         serviceScope.launch {
@@ -145,7 +130,6 @@ class LocationForegroundService : Service() {
                     })
                     put("isOnline", true)
                 }
-
                 val media = "application/json".toMediaType()
                 val requestBody = RequestBody.create(media, bodyJson.toString())
                 val request = Request.Builder()
@@ -153,24 +137,20 @@ class LocationForegroundService : Service() {
                     .put(requestBody)
                     .addHeader("Content-Type", "application/json")
                     .addHeader("X-Parse-Application-Id", appId)
-                    .addHeader("X-Parse-Master-Key", masterKey)
+                    .addHeader("X-Parse-Session-Token", sessionToken)
                     .build()
-
                 httpClient.newCall(request).execute().use { /* ignore response */ }
             } catch (_: Throwable) {
                 // swallow; next tick will retry
             }
         }
     }
-
     private fun buildNotification(): Notification {
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
         val launchIntent = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
         val pendingIntent = PendingIntent.getActivity(this, 0, launchIntent, PendingIntent.FLAG_IMMUTABLE)
-
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Nexi is sharing your location")
             .setContentText("Location updates are running every 10 seconds")
@@ -180,7 +160,6 @@ class LocationForegroundService : Service() {
             .setContentIntent(pendingIntent)
             .build()
     }
-
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -193,15 +172,13 @@ class LocationForegroundService : Service() {
             manager.createNotificationChannel(channel)
         }
     }
-
     companion object {
         const val CHANNEL_ID = "nexi_location_channel"
         const val NOTIFICATION_ID = 1001
-
         const val EXTRA_OBJECT_ID = "object_id"
         const val EXTRA_SERVER_URL = "server_url"
         const val EXTRA_APP_ID = "app_id"
-        const val EXTRA_MASTER_KEY = "master_key"
+        const val EXTRA_SESSION_TOKEN = "session_token"
     }
 }
 
@@ -212,9 +189,6 @@ private suspend fun FusedLocationProviderClient.lastLocationAwait(): Location? =
             .addOnSuccessListener { cont.resume(it) }
             .addOnFailureListener { cont.resume(null) }
     }
-
 private suspend fun FusedLocationProviderClient.awaitSafe(): Location? = try {
     lastLocationAwait()
 } catch (_: Throwable) { null }
-
-

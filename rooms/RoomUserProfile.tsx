@@ -30,7 +30,6 @@ import ReportScreen from './ReportScreen'; // Import the new ReportScreen compon
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const SOCKET_URL = 'https://nexi-server.onrender.com';
 const APP_ID = 'myAppId';
-const MASTER_KEY = 'myMasterKey';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type RoomUserProfileRouteProp = RouteProp<RootStackParamList, 'RoomUserProfile'>;
@@ -137,6 +136,7 @@ export default function RoomUserProfile({ navigation, route }: { navigation: Nav
   const [showMenu, setShowMenu] = useState(false);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
 
   // Report modal states
   const [reportModalVisible, setReportModalVisible] = useState(false);
@@ -166,6 +166,20 @@ export default function RoomUserProfile({ navigation, route }: { navigation: Nav
       }
     };
   }, [roomId]);
+
+  useEffect(() => {
+    const loadSessionToken = async () => {
+      try {
+        const token = await AsyncStorage.getItem('parseSessionToken');
+        setSessionToken(token);
+      } catch (err) {
+        console.error('Failed to load session token:', err);
+        setSessionToken(null);
+      }
+    };
+
+    loadSessionToken();
+  }, []);
 
   useEffect(() => {
     const getUserInfo = async () => {
@@ -233,7 +247,7 @@ export default function RoomUserProfile({ navigation, route }: { navigation: Nav
       }));
       const res = await fetch(
         `${API_URL}/classes/RoomMember?where=${whereStr}&count=1&limit=0`,
-        { headers: { 'X-Parse-Application-Id': APP_ID, 'X-Parse-Master-Key': MASTER_KEY } }
+        { headers: { 'X-Parse-Application-Id': APP_ID, 'X-Parse-Session-Token': sessionToken! } }
       );
       const data = await res.json();
       return data.count || 0;
@@ -253,11 +267,11 @@ export default function RoomUserProfile({ navigation, route }: { navigation: Nav
       if (cancelled || !isMountedRef.current) return;
 
       try {
-        const roomRes = await fetch(`${API_URL}/classes/Room/${roomId}`, { headers: { 'X-Parse-Application-Id': APP_ID, 'X-Parse-Master-Key': MASTER_KEY } });
+        const roomRes = await fetch(`${API_URL}/classes/Room/${roomId}`, { headers: { 'X-Parse-Application-Id': APP_ID, 'X-Parse-Session-Token': sessionToken! } });
         if (cancelled || !isMountedRef.current) return;
 
         const room = await roomRes.json();
-        const creatorRes = await fetch(`${API_URL}/classes/UserProfile/${room.creator.objectId}`, { headers: { 'X-Parse-Application-Id': APP_ID, 'X-Parse-Master-Key': MASTER_KEY } });
+        const creatorRes = await fetch(`${API_URL}/classes/UserProfile/${room.creator.objectId}`, { headers: { 'X-Parse-Application-Id': APP_ID, 'X-Parse-Session-Token': sessionToken! } });
         if (cancelled || !isMountedRef.current) return;
 
         const creator = await creatorRes.json();
@@ -271,7 +285,7 @@ export default function RoomUserProfile({ navigation, route }: { navigation: Nav
             room: { __type: 'Pointer', className: 'Room', objectId: roomId },
             user: { __type: 'Pointer', className: 'UserProfile', objectId: myParseObjectId },
           }))}`,
-          { headers: { 'X-Parse-Application-Id': APP_ID, 'X-Parse-Master-Key': MASTER_KEY } }
+          { headers: { 'X-Parse-Application-Id': APP_ID, 'X-Parse-Session-Token': sessionToken! } }
         );
         if (cancelled || !isMountedRef.current) return;
 
@@ -316,7 +330,7 @@ export default function RoomUserProfile({ navigation, route }: { navigation: Nav
         `${API_URL}/classes/RoomPost?where=${encodeURIComponent(JSON.stringify({
           room: { __type: 'Pointer', className: 'Room', objectId: roomId },
         }))}&include=user&order=-createdAt&limit=${limit}&skip=${skip}`,
-        { headers: { 'X-Parse-Application-Id': APP_ID, 'X-Parse-Master-Key': MASTER_KEY } }
+        { headers: { 'X-Parse-Application-Id': APP_ID, 'X-Parse-Session-Token': sessionToken! } }
       );
 
       if (!isMountedRef.current) return;
@@ -359,6 +373,27 @@ export default function RoomUserProfile({ navigation, route }: { navigation: Nav
     }
   };
 
+    // Add this useEffect — it safely refetches on focus
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      if (!isMountedRef.current || !sessionToken || !roomId) return;
+
+      // Reset and refetch fresh
+      setPosts([]);
+      setHasMore(true);
+      fetchPosts(0, 4);
+
+      // Update member count too
+      getMemberCount().then((count) => {
+        if (isMountedRef.current) {
+          setMemberCount(count);
+        }
+      });
+    });
+
+    return unsubscribe;
+  }, [navigation, roomId, sessionToken]); // ← Important: include sessionToken
+
   useEffect(() => {
     if (!isMountedRef.current) return;
 
@@ -390,7 +425,7 @@ export default function RoomUserProfile({ navigation, route }: { navigation: Nav
     try {
       await fetch(`${API_URL}/classes/RoomPost/${post.objectId}`, {
         method: 'DELETE',
-        headers: { 'X-Parse-Application-Id': APP_ID, 'X-Parse-Master-Key': MASTER_KEY },
+        headers: { 'X-Parse-Application-Id': APP_ID, 'X-Parse-Session-Token': sessionToken! },
       });
       if (isMountedRef.current) {
         setPosts((prev) => prev.filter((p) => p.objectId !== post.objectId));
@@ -444,7 +479,7 @@ export default function RoomUserProfile({ navigation, route }: { navigation: Nav
     try {
       await fetch(`${API_URL}/classes/RoomMember`, {
         method: 'POST',
-        headers: { 'X-Parse-Application-Id': APP_ID, 'X-Parse-Master-Key': MASTER_KEY, 'Content-Type': 'application/json' },
+        headers: { 'X-Parse-Application-Id': APP_ID, 'X-Parse-Session-Token': sessionToken!, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           user: { __type: 'Pointer', className: 'UserProfile', objectId: myParseObjectId },
           room: { __type: 'Pointer', className: 'Room', objectId: roomId },
@@ -483,13 +518,13 @@ export default function RoomUserProfile({ navigation, route }: { navigation: Nav
                   room: { __type: 'Pointer', className: 'Room', objectId: roomId },
                   user: { __type: 'Pointer', className: 'UserProfile', objectId: myParseObjectId },
                 }))}`,
-                { headers: { 'X-Parse-Application-Id': APP_ID, 'X-Parse-Master-Key': MASTER_KEY } }
+                { headers: { 'X-Parse-Application-Id': APP_ID, 'X-Parse-Session-Token': sessionToken! } }
               );
               const data = await res.json();
               if (data.results.length > 0) {
                 await fetch(`${API_URL}/classes/RoomMember/${data.results[0].objectId}`, {
                   method: 'DELETE',
-                  headers: { 'X-Parse-Application-Id': APP_ID, 'X-Parse-Master-Key': MASTER_KEY },
+                  headers: { 'X-Parse-Application-Id': APP_ID, 'X-Parse-Session-Token': sessionToken! },
                 });
               }
               if (isMountedRef.current) {
@@ -626,7 +661,7 @@ export default function RoomUserProfile({ navigation, route }: { navigation: Nav
         {/* FAB */}
         {canPost && (
           <TouchableOpacity
-            style={[styles.fab, { backgroundColor: colors.primary }]}
+            style={[styles.fab, { backgroundColor:'#5170ff'}]}
             onPress={() => navigation.navigate('RoomPostUpload', { roomId, roomName })}
           >
             <Ionicons name="add" size={moderateScale(28)} color="white" />

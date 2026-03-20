@@ -27,7 +27,7 @@ import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-nat
 const GOOGLE_API_KEY = "AIzaSyD4Qj2VtIMt_4wrnXKoFtQcGX91cOduYoc"; // Replace with your key
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
-const MASTER_KEY = 'myMasterKey';
+
 
 export default function RoomLocationScreen() {
   const route = useRoute<any>();
@@ -48,6 +48,7 @@ export default function RoomLocationScreen() {
   const [search, setSearch] = useState("");
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
 
   const mapRef = useRef<MapView>(null);
 
@@ -115,6 +116,20 @@ export default function RoomLocationScreen() {
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
     );
   };
+
+  useEffect(() => {
+  const loadSessionToken = async () => {
+    try {
+      const token = await AsyncStorage.getItem('parseSessionToken');
+      setSessionToken(token);
+    } catch (err) {
+      console.error('Failed to load session token:', err);
+      setSessionToken(null);
+    }
+  };
+
+  loadSessionToken();
+}, []);
 
   useEffect(() => {
     // Only get user location if guidelines are accepted
@@ -214,7 +229,7 @@ export default function RoomLocationScreen() {
         method: 'POST',
         headers: {
           'X-Parse-Application-Id': APP_ID,
-          'X-Parse-Master-Key': MASTER_KEY,
+          'X-Parse-Session-Token': sessionToken!,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(roomData),
@@ -234,7 +249,7 @@ export default function RoomLocationScreen() {
         method: 'POST',
         headers: {
           'X-Parse-Application-Id': APP_ID,
-          'X-Parse-Master-Key': MASTER_KEY,
+          'X-Parse-Session-Token': sessionToken!,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(memberData),

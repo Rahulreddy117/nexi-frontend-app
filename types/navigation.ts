@@ -1,6 +1,7 @@
 // types/navigation.ts
 export type RootStackParamList = {
   Login: undefined;
+  Root: undefined;  // 👈 ADD THIS LINE
 
   ProfileSetup: {
     userId: string;
@@ -63,6 +64,7 @@ export type RootStackParamList = {
     roomId: string;
     roomName: string;
   };
+  
 
   // ADD THIS LINE — This was missing!
   RoomPostUpload: {

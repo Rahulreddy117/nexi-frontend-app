@@ -23,6 +23,9 @@ import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-nat
 const UPLOAD_PRESET = 'ml_default';
 const CLOUDINARY_CLOUD_NAME = 'deyouwm72';
 
+const API_URL = 'https://nexi-server.onrender.com/parse';
+const APP_ID = 'myAppId';
+
 export default function RoomCreationScreen() {
   const navigation = useNavigation<any>();
   const { colors } = useTheme();
@@ -31,6 +34,21 @@ export default function RoomCreationScreen() {
   const [roomPhoto, setRoomPhoto] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadSessionToken = async () => {
+      try {
+        const token = await AsyncStorage.getItem('parseSessionToken');
+        setSessionToken(token);
+      } catch (err) {
+        console.error('Failed to load session token:', err);
+        setSessionToken(null);
+      }
+    };
+
+    loadSessionToken();
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -88,6 +106,12 @@ export default function RoomCreationScreen() {
       if (!finalPhotoUrl) {
         return Alert.alert('Error', 'Photo upload failed. Please try again.');
       }
+    }
+
+    // Optional: Validate session token before proceeding
+    if (!sessionToken) {
+      Alert.alert('Error', 'Authentication required. Please log in again.');
+      return;
     }
 
     proceed(finalPhotoUrl);

@@ -1,3 +1,4 @@
+// LocationModule.kt
 package com.nexi.location
 
 import android.Manifest
@@ -10,11 +11,9 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 
 class LocationModule(private val reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
-
     override fun getName(): String = "LocationModule"
-
     @ReactMethod
-    fun startLocationSharing(objectId: String, serverUrl: String, appId: String, masterKey: String, promise: Promise) {
+    fun startLocationSharing(objectId: String, serverUrl: String, appId: String, sessionToken: String, promise: Promise) {
         try {
             // Permission sanity check; JS should request, this is just a guard
             val hasFine = reactContext.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -26,12 +25,11 @@ class LocationModule(private val reactContext: ReactApplicationContext) : ReactC
                 promise.reject("E_PERM", "Missing location permissions")
                 return
             }
-
             val intent = Intent(reactContext, LocationForegroundService::class.java).apply {
                 putExtra(LocationForegroundService.EXTRA_OBJECT_ID, objectId)
                 putExtra(LocationForegroundService.EXTRA_SERVER_URL, serverUrl)
                 putExtra(LocationForegroundService.EXTRA_APP_ID, appId)
-                putExtra(LocationForegroundService.EXTRA_MASTER_KEY, masterKey)
+                putExtra(LocationForegroundService.EXTRA_SESSION_TOKEN, sessionToken)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 reactContext.startForegroundService(intent)
@@ -43,7 +41,6 @@ class LocationModule(private val reactContext: ReactApplicationContext) : ReactC
             promise.reject("E_START", t)
         }
     }
-
     @ReactMethod
     fun stopLocationSharing(promise: Promise) {
         try {
@@ -55,5 +52,3 @@ class LocationModule(private val reactContext: ReactApplicationContext) : ReactC
         }
     }
 }
-
-

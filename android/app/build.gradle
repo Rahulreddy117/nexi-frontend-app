@@ -20,8 +20,8 @@ android {
         applicationId "com.nexi"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 2
+        versionName "1.1"
 
         // ✅ Auth0 placeholders (required for manifest)
         manifestPlaceholders = [
@@ -37,6 +37,12 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release {
+            storeFile file(MYAPP_UPLOAD_STORE_FILE) // from gradle.properties
+            storePassword MYAPP_UPLOAD_STORE_PASSWORD
+            keyAlias MYAPP_UPLOAD_KEY_ALIAS
+            keyPassword MYAPP_UPLOAD_KEY_PASSWORD
+        }
     }
 
     buildTypes {
@@ -44,7 +50,7 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.release  // 🔹 use release keystore
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
@@ -59,9 +65,9 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+
     // Location services for foreground location updates
     implementation 'com.google.android.gms:play-services-location:21.3.0'
 }
 
 apply from: "../../node_modules/react-native-vector-icons/fonts.gradle"
-

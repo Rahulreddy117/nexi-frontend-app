@@ -23,6 +23,7 @@ import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-nat
 import type { RootStackParamList } from './types/navigation';
 import { useTheme } from './ThemeContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface Auth0IdToken {
   sub: string;
@@ -58,30 +59,29 @@ export default function ViewProfileScreen() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [showDeleteMenu, setShowDeleteMenu] = useState(false);
   const [deletingImage, setDeletingImage] = useState(false);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
 
   const API_URL = 'https://nexi-server.onrender.com/parse';
   const APP_ID = 'myAppId';
-  const MASTER_KEY = 'myMasterKey';
 
-  const HEADERS = {
-    'X-Parse-Application-Id': APP_ID,
-    'X-Parse-Master-Key': MASTER_KEY,
-    'Content-Type': 'application/json',
-  };
-
-  async function queryUser(auth0Id: string): Promise<any | null> {
+  async function queryUser(auth0Id: string, token: string): Promise<any | null> {
     const where = { auth0Id };
     const whereStr = encodeURIComponent(JSON.stringify(where));
+    const headers = {
+      'X-Parse-Application-Id': APP_ID,
+      'X-Parse-Session-Token': token,
+      'Content-Type': 'application/json',
+    };
     const response = await fetch(
       `${API_URL}/classes/UserProfile?where=${whereStr}&limit=1`,
-      { method: 'GET', headers: HEADERS }
+      { method: 'GET', headers }
     );
     if (!response.ok) return null;
     const data = await response.json();
     return data.results?.[0] ?? null;
   }
 
-  async function fetchUserPosts(userParseObjectId: string) {
+  async function fetchUserPosts(userParseObjectId: string, token: string) {
     try {
       const where = {
         user: {
@@ -91,9 +91,14 @@ export default function ViewProfileScreen() {
         },
       };
       const whereStr = encodeURIComponent(JSON.stringify(where));
+      const headers = {
+        'X-Parse-Application-Id': APP_ID,
+        'X-Parse-Session-Token': token,
+        'Content-Type': 'application/json',
+      };
       const response = await fetch(
         `${API_URL}/classes/Post?where=${whereStr}&order=-createdAt&limit=50`,
-        { method: 'GET', headers: HEADERS }
+        { method: 'GET', headers }
       );
 
       if (!response.ok) throw new Error('Failed to fetch posts');
@@ -118,10 +123,20 @@ export default function ViewProfileScreen() {
     }
 
     try {
-      const userInfo: Auth0IdToken = jwtDecode(storedToken);
+      const [userInfo, token] = await Promise.all([
+        jwtDecode<Auth0IdToken>(storedToken),
+        AsyncStorage.getItem('parseSessionToken'),
+      ]);
+      setSessionToken(token);
       setUserId(userInfo.sub);
 
-      const userSnap = await queryUser(userInfo.sub);
+      if (!token) {
+        setUsername('No Session');
+        setLoading(false);
+        return;
+      }
+
+      const userSnap = await queryUser(userInfo.sub, token);
       if (userSnap) {
         setUsername(userSnap.username || userInfo.name || 'Unknown');
         setBio(userSnap.bio || '');
@@ -130,7 +145,7 @@ export default function ViewProfileScreen() {
         setFollowersCount(userSnap.followersCount ?? 0);
         setFollowingCount(userSnap.followingCount ?? 0);
 
-        await fetchUserPosts(userSnap.objectId);
+        await fetchUserPosts(userSnap.objectId, token);
       } else {
         setUsername('No Profile');
       }
@@ -168,14 +183,14 @@ export default function ViewProfileScreen() {
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
-      if (userId) {
-        queryUser(userId).then(user => {
-          if (user?.objectId) fetchUserPosts(user.objectId);
+      if (userId && sessionToken) {
+        queryUser(userId, sessionToken).then(user => {
+          if (user?.objectId) fetchUserPosts(user.objectId, sessionToken);
         });
       }
     });
     return unsubscribe;
-  }, [navigation, userId]);
+  }, [navigation, userId, sessionToken]);
 
   const handleEditProfile = () => {
     if (!userId) return;
@@ -207,7 +222,7 @@ export default function ViewProfileScreen() {
   };
 
   const handleDeleteImage = async () => {
-    if (!selectedImage || deletingImage) return;
+    if (!selectedImage || !sessionToken || deletingImage) return;
     
     Alert.alert(
       'Delete Image',
@@ -223,7 +238,12 @@ export default function ViewProfileScreen() {
           onPress: async () => {
             setDeletingImage(true);
             try {
-              const userSnap = await queryUser(userId!);
+              const headers = {
+                'X-Parse-Application-Id': APP_ID,
+                'X-Parse-Session-Token': sessionToken,
+                'Content-Type': 'application/json',
+              };
+              const userSnap = await queryUser(userId!, sessionToken);
               if (!userSnap) throw new Error('User not found');
 
               const where = {
@@ -236,7 +256,7 @@ export default function ViewProfileScreen() {
               const whereStr = encodeURIComponent(JSON.stringify(where));
               const response = await fetch(
                 `${API_URL}/classes/Post?where=${whereStr}`,
-                { method: 'GET', headers: HEADERS }
+                { method: 'GET', headers }
               );
 
               if (!response.ok) throw new Error('Failed to fetch posts');
@@ -255,7 +275,7 @@ export default function ViewProfileScreen() {
                 if (updatedImageUrls.length === 0) {
                   const deleteResponse = await fetch(
                     `${API_URL}/classes/Post/${postWithImage.objectId}`,
-                    { method: 'DELETE', headers: HEADERS }
+                    { method: 'DELETE', headers }
                   );
                   
                   if (!deleteResponse.ok) throw new Error('Failed to delete post');
@@ -264,7 +284,7 @@ export default function ViewProfileScreen() {
                     `${API_URL}/classes/Post/${postWithImage.objectId}`,
                     {
                       method: 'PUT',
-                      headers: HEADERS,
+                      headers,
                       body: JSON.stringify({ imageUrls: updatedImageUrls }),
                     }
                   );

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -24,7 +24,6 @@ import { useTheme } from './ThemeContext';
 
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
-const MASTER_KEY = 'myMasterKey';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -33,6 +32,15 @@ const { LocationModule } = NativeModules;
 export default function SettingsScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { mode, colors, toggleTheme } = useTheme();
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadSessionToken = async () => {
+      const token = await AsyncStorage.getItem('parseSessionToken');
+      setSessionToken(token);
+    };
+    loadSessionToken();
+  }, []);
 
   const handlePersonalInfo = () => {
     navigation.navigate('PersonalInfo' as never);
@@ -40,11 +48,11 @@ export default function SettingsScreen() {
 
 
     const openPrivacyPolicy = () => {
-    Linking.openURL('https://your-app.com/privacy-policy'); // ← Replace with your real URL
+    Linking.openURL('https://sites.google.com/view/nexi-privacy-policy/home'); // ← Replace with your real URL
   };
 
   const openTermsAndConditions = () => {
-    Linking.openURL('https://your-app.com/terms-and-conditions'); // ← Replace with your real URL
+    Linking.openURL('https://sites.google.com/view/nexi-privacy-policy/termsconditions'); // ← Replace with your real URL
   };
 
   const handleJoinedRooms = async () => {
@@ -62,7 +70,7 @@ export default function SettingsScreen() {
 
   const handleLogout = async () => {
     try {
-      await AsyncStorage.multiRemove(['idToken', 'parseObjectId', 'sessionToken']);
+      await AsyncStorage.multiRemove(['idToken', 'parseObjectId', 'parseSessionToken']);
 
       if (Platform.OS === 'android' && LocationModule?.stopLocationSharing) {
         await LocationModule.stopLocationSharing();
@@ -82,7 +90,7 @@ export default function SettingsScreen() {
     const auth0Id = await AsyncStorage.getItem('auth0Id');
     const parseObjectId = await AsyncStorage.getItem('parseObjectId');
 
-    if (!auth0Id || !parseObjectId) {
+    if (!auth0Id || !parseObjectId || !sessionToken) {
       Alert.alert('Error', 'Not logged in');
       return;
     }
@@ -99,7 +107,7 @@ export default function SettingsScreen() {
             try {
               const headers = {
                 'X-Parse-Application-Id': APP_ID,
-                'X-Parse-Master-Key': MASTER_KEY,
+                'X-Parse-Session-Token': sessionToken,
                 'Content-Type': 'application/json',
               };
 

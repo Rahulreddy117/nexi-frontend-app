@@ -25,13 +25,11 @@ import type { RootStackParamList } from '../types/navigation';
 import { useTheme } from '../ThemeContext';
 
 const CLOUDINARY_CLOUD_NAME = 'deyouwm72';
-const CLOUDINARY_API_KEY = '592525159367972';
-const CLOUDINARY_API_SECRET = 'taAW33vQ0C69nNC5AOT8KkhR-jk';
+
 const UPLOAD_PRESET = 'ml_default';
 
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
-const MASTER_KEY = 'myMasterKey';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type RoomPostUploadRouteProp = RouteProp<RootStackParamList, 'RoomPostUpload'>;
@@ -51,6 +49,7 @@ export default function RoomPostUpload() {
   const [images, setImages] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [myParseObjectId, setMyParseObjectId] = useState<string | null>(null);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
 
   // Load myParseObjectId
   React.useEffect(() => {
@@ -59,6 +58,21 @@ export default function RoomPostUpload() {
       setMyParseObjectId(parseId);
     };
     loadUserId();
+  }, []);
+
+  // Load sessionToken
+  React.useEffect(() => {
+    const loadSessionToken = async () => {
+      try {
+        const token = await AsyncStorage.getItem('parseSessionToken');
+        setSessionToken(token);
+      } catch (err) {
+        console.error('Failed to load session token:', err);
+        setSessionToken(null);
+      }
+    };
+
+    loadSessionToken();
   }, []);
 
   const pickImage = () => {
@@ -134,7 +148,7 @@ export default function RoomPostUpload() {
         method: 'POST',
         headers: {
           'X-Parse-Application-Id': APP_ID,
-          'X-Parse-Master-Key': MASTER_KEY,
+          'X-Parse-Session-Token': sessionToken!,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({

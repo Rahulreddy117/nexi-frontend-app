@@ -28,24 +28,23 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type ProfileSetupRouteProp = RouteProp<RootStackParamList, 'ProfileSetup'>;
 
 const CLOUDINARY_CLOUD_NAME = 'deyouwm72';
-const CLOUDINARY_API_KEY = '592525159367972';
-const CLOUDINARY_API_SECRET = 'taAW33vQ0C69nNC5AOT8KkhR-jk';
+
 const UPLOAD_PRESET = 'ml_default';
 
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
-const MASTER_KEY = 'myMasterKey';
 
-async function queryUser(auth0Id: string): Promise<any | null> {
+async function queryUser(auth0Id: string, sessionToken: string): Promise<any | null> {
   const where = { auth0Id };
   const whereStr = encodeURIComponent(JSON.stringify(where));
+  const headers = {
+    'X-Parse-Application-Id': APP_ID,
+    'X-Parse-Session-Token': sessionToken,
+    'Content-Type': 'application/json',
+  };
   const response = await fetch(`${API_URL}/classes/UserProfile?where=${whereStr}&limit=1`, {
     method: 'GET',
-    headers: {
-      'X-Parse-Application-Id': APP_ID,
-      'X-Parse-Master-Key': MASTER_KEY,
-      'Content-Type': 'application/json',
-    },
+    headers,
   });
 
   if (!response.ok) {
@@ -61,16 +60,17 @@ async function queryUser(auth0Id: string): Promise<any | null> {
   return null;
 }
 
-async function queryUserByUsername(username: string): Promise<any | null> {
+async function queryUserByUsername(username: string, sessionToken: string): Promise<any | null> {
   const where = { username };
   const whereStr = encodeURIComponent(JSON.stringify(where));
+  const headers = {
+    'X-Parse-Application-Id': APP_ID,
+    'X-Parse-Session-Token': sessionToken,
+    'Content-Type': 'application/json',
+  };
   const response = await fetch(`${API_URL}/classes/UserProfile?where=${whereStr}&limit=1`, {
     method: 'GET',
-    headers: {
-      'X-Parse-Application-Id': APP_ID,
-      'X-Parse-Master-Key': MASTER_KEY,
-      'Content-Type': 'application/json',
-    },
+    headers,
   });
 
   if (!response.ok) return null;
@@ -78,17 +78,23 @@ async function queryUserByUsername(username: string): Promise<any | null> {
   return data.results && data.results.length > 0 ? data.results[0] : null;
 }
 
-async function saveUser(userData: any, objectId?: string): Promise<any> {
+async function saveUser(
+  userData: any, 
+  sessionToken: string, 
+  objectId?: string
+): Promise<any> {
   const url = objectId ? `${API_URL}/classes/UserProfile/${objectId}` : `${API_URL}/classes/UserProfile`;
   const method = objectId ? 'PUT' : 'POST';
 
+  const headers = {
+    'X-Parse-Application-Id': APP_ID,
+    'X-Parse-Session-Token': sessionToken,
+    'Content-Type': 'application/json',
+  };
+
   const response = await fetch(url, {
     method,
-    headers: {
-      'X-Parse-Application-Id': APP_ID,
-      'X-Parse-Master-Key': MASTER_KEY,
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify(userData),
   });
 
@@ -105,7 +111,10 @@ export default function ProfileSetupScreen() {
   const route = useRoute<ProfileSetupRouteProp>();
   const navigation = useNavigation<NavigationProp>();
   const { colors, mode } = useTheme();
-  const params = route.params as any;
+
+
+  const params = route.params || {};
+  
   const { userId, email, name, isEditMode: initialIsEditMode } = params;
   const initialUsername = params.username || '';
   const initialBio = params.bio || '';
@@ -121,13 +130,30 @@ export default function ProfileSetupScreen() {
   const [gender, setGender] = useState(initialGender || '');
   const [isEditMode, setIsEditMode] = useState(initialIsEditMode || false);
   const [usernameError, setUsernameError] = useState<string | null>(null);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadSessionToken = async () => {
+      const token = await AsyncStorage.getItem('parseSessionToken');
+      setSessionToken(token);
+    };
+    loadSessionToken();
+  }, []);
+
+
+  useEffect(() => {
+  if (!userId) {
+    Alert.alert('Error', 'Session invalid. Please log in again.');
+    navigation.replace('Login');
+  }
+}, [userId]);
 
   // Prefill from DB if in edit mode
   useEffect(() => {
     const prefillIfEdit = async () => {
-      if (isEditMode && (!initialUsername || !initialBio)) {
+      if (isEditMode && (!initialUsername || !initialBio) && sessionToken) {
         try {
-          const existing = await queryUser(userId);
+          const existing = await queryUser(userId, sessionToken);
           if (existing) {
             setUsername(existing.username || '');
             setBio(existing.bio || '');
@@ -141,12 +167,12 @@ export default function ProfileSetupScreen() {
       }
     };
     prefillIfEdit();
-  }, [isEditMode, userId, initialUsername, initialBio]);
+  }, [isEditMode, userId, initialUsername, initialBio, sessionToken]);
 
   // Debounced username validation + DB check
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
-      if (username && username !== initialUsername) {
+      if (username && username !== initialUsername && sessionToken) {
         validateAndCheckUsername(username);
       } else {
         setUsernameError(null);
@@ -154,7 +180,7 @@ export default function ProfileSetupScreen() {
     }, 600);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [username, initialUsername]);
+  }, [username, initialUsername, sessionToken]);
 
   const validateAndCheckUsername = async (value: string) => {
     setUsernameError(null);
@@ -178,7 +204,7 @@ export default function ProfileSetupScreen() {
     if (isEditMode && value === initialUsername) return;
 
     try {
-      const existing = await queryUserByUsername(value);
+      const existing = await queryUserByUsername(value, sessionToken!);
       if (existing && existing.auth0Id !== userId) {
         setUsernameError('Username already taken');
       }
@@ -262,6 +288,11 @@ export default function ProfileSetupScreen() {
       return;
     }
 
+    if (!sessionToken) {
+      Alert.alert('Error', 'Session expired. Please log in again.');
+      return;
+    }
+
     try {
       let profilePicUrl = profilePic;
       if (profilePic && !profilePic.startsWith('https://')) {
@@ -271,7 +302,7 @@ export default function ProfileSetupScreen() {
         }
       }
 
-      const existing = await queryUser(userId);
+      const existing = await queryUser(userId, sessionToken);
       let objectId: string | undefined = existing?.objectId;
 
       const userDoc = {
@@ -285,7 +316,7 @@ export default function ProfileSetupScreen() {
         profilePicUrl: profilePicUrl || null,
       };
 
-      const result = await saveUser(userDoc, objectId);
+      const result = await saveUser(userDoc, sessionToken, objectId);
 
       const parseObjectId = objectId || result.objectId;
       if (parseObjectId) {

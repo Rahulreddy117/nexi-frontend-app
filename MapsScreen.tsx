@@ -60,7 +60,7 @@ const darkMapStyle = [
 
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
-const MASTER_KEY = 'myMasterKey';
+
 
 interface Auth0IdToken {
   sub: string;
@@ -70,14 +70,16 @@ interface Auth0IdToken {
   email_verified: boolean;
 }
 
-async function queryUser(auth0Id: string): Promise<any | null> {
+async function queryUser(auth0Id: string, token: string): Promise<any | null> {
+  if (!token) return null;
+
   const where = { auth0Id };
   const whereStr = encodeURIComponent(JSON.stringify(where));
   const res = await fetch(`${API_URL}/classes/UserProfile?where=${whereStr}&limit=1`, {
     method: 'GET',
     headers: {
       'X-Parse-Application-Id': APP_ID,
-      'X-Parse-Master-Key': MASTER_KEY,
+      'X-Parse-Session-Token': token,
       'Content-Type': 'application/json',
     },
   });
@@ -85,6 +87,7 @@ async function queryUser(auth0Id: string): Promise<any | null> {
   const data = await res.json();
   return data.results?.[0] ?? null;
 }
+
 
 interface MapsScreenProps {
   navigation: NavigationProp<RootStackParamList>;
@@ -104,8 +107,23 @@ export default function MapsScreen({ navigation }: MapsScreenProps) {
   const [nearbyUsers, setNearbyUsers] = useState<UserMarker[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showPreciseModal, setShowPreciseModal] = useState(false);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
   //removed
   const mapRef = useRef<MapView>(null);
+
+
+  useEffect(() => {
+  const loadSessionToken = async () => {
+    try {
+      const token = await AsyncStorage.getItem('parseSessionToken');
+      setSessionToken(token);
+    } catch (err) {
+      console.error('Failed to load session token:', err);
+    }
+  };
+
+  loadSessionToken();
+}, []);
   
 
   // Sync location sharing state from storage on focus
@@ -140,13 +158,13 @@ export default function MapsScreen({ navigation }: MapsScreenProps) {
     const whereStr = encodeURIComponent(JSON.stringify(where));
     try {
       const res = await fetch(`${API_URL}/classes/Message?where=${whereStr}&limit=1000`, {
-        method: 'GET',
-        headers: {
-          'X-Parse-Application-Id': APP_ID,
-          'X-Parse-Master-Key': MASTER_KEY,
-          'Content-Type': 'application/json',
-        },
-      });
+  method: 'GET',
+  headers: {
+    'X-Parse-Application-Id': APP_ID,
+    'X-Parse-Session-Token': sessionToken || '',
+    'Content-Type': 'application/json',
+  },
+});
       if (!res.ok) return;
       const data = await res.json();
       const results = data.results || [];
@@ -174,14 +192,18 @@ export default function MapsScreen({ navigation }: MapsScreenProps) {
   useEffect(() => {
     const init = async () => {
       const token = await EncryptedStorage.getItem('idToken');
+      const parseToken = await AsyncStorage.getItem('parseSessionToken'); // ← ADD THIS
       if (token) {
         const decoded: Auth0IdToken = jwtDecode(token);
         const auth0Id = decoded.sub;
         await AsyncStorage.setItem('auth0Id', auth0Id);
         setCurrentUserId(auth0Id);
-        const snap = await queryUser(auth0Id);
-        setProfilePicUrl(snap?.profilePicUrl ?? decoded.picture ?? null);
-        setMyObjectId(snap?.objectId || null);
+
+       // Now query user with session token instead of master key
+    const snap = await queryUser(auth0Id, parseToken || '');
+    setProfilePicUrl(snap?.profilePicUrl ?? decoded.picture ?? null);
+    setMyObjectId(snap?.objectId || null);
+
       }
     };
     init();
@@ -205,7 +227,7 @@ export default function MapsScreen({ navigation }: MapsScreenProps) {
         const { latitude, longitude } = pos.coords;
         setLocation({ lat: latitude, lon: longitude });
         if (first && mapRef.current) {
-          mapRef.current.animateCamera({ center: { latitude, longitude }, zoom: 18 });
+          mapRef.current.animateCamera({ center: { latitude, longitude }, zoom: 25 });
           first = false;
         }
       },
@@ -230,13 +252,13 @@ export default function MapsScreen({ navigation }: MapsScreenProps) {
       if (currentObjectId) where.objectId = { $ne: currentObjectId };
       const whereStr = encodeURIComponent(JSON.stringify(where));
       const res = await fetch(`${API_URL}/classes/UserProfile?where=${whereStr}&limit=100`, {
-        method: 'GET',
-        headers: {
-          'X-Parse-Application-Id': APP_ID,
-          'X-Parse-Master-Key': MASTER_KEY,
-          'Content-Type': 'application/json',
-        },
-      });
+  method: 'GET',
+  headers: {
+    'X-Parse-Application-Id': APP_ID,
+    'X-Parse-Session-Token': sessionToken || '',
+    'Content-Type': 'application/json',
+  },
+});
       if (!res.ok) return;
       const data = await res.json();
       const items = (data.results || [])
@@ -577,7 +599,7 @@ const styles = StyleSheet.create({
     right: wp('4%'), 
     flexDirection: 'row', 
     alignItems: 'center', 
-    backgroundColor: 'rgba(0,122,255,0.9)', 
+    backgroundColor: '#5170ff', 
     paddingHorizontal: wp('4%'), 
     paddingVertical: hp('1.5%'), 
     borderRadius: moderateScale(25), 

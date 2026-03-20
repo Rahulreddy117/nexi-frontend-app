@@ -36,7 +36,7 @@ const getThemeColors = (mode: ThemeMode) => {
       border: '#333',
       accent: '#333',
       buttonText: '#fff',
-      primary: '#0A84FF',
+      primary: '#5170ff',
       card: '#1C1C1E',
       notificationBg: 'rgba(99, 102, 241, 0.2)',
     };

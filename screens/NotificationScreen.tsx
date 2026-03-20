@@ -20,7 +20,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
-const MASTER_KEY = 'myMasterKey';
 
 const timeAgo = (dateString: string): string => {
   const now = new Date();
@@ -41,6 +40,7 @@ export default function NotificationScreen() {
   const navigation = useNavigation<any>();
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
 
   const fetchNotifications = useCallback(async () => {
     const auth0Id = await AsyncStorage.getItem('auth0Id');
@@ -57,7 +57,7 @@ export default function NotificationScreen() {
         {
           headers: {
             'X-Parse-Application-Id': APP_ID,
-            'X-Parse-Master-Key': MASTER_KEY,
+            'X-Parse-Session-Token': sessionToken!,
           },
         }
       );
@@ -68,6 +68,20 @@ export default function NotificationScreen() {
     } finally {
       setLoading(false);
     }
+  }, [sessionToken]);
+
+  useEffect(() => {
+    const loadSessionToken = async () => {
+      try {
+        const token = await AsyncStorage.getItem('parseSessionToken');
+        setSessionToken(token);
+      } catch (err) {
+        console.error('Failed to load session token:', err);
+        setSessionToken(null);
+      }
+    };
+
+    loadSessionToken();
   }, []);
 
   useFocusEffect(
@@ -82,7 +96,7 @@ export default function NotificationScreen() {
         method: 'PUT',
         headers: {
           'X-Parse-Application-Id': APP_ID,
-          'X-Parse-Master-Key': MASTER_KEY,
+          'X-Parse-Session-Token': sessionToken!,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ read: true }),

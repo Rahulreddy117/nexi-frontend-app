@@ -14,6 +14,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
 import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-native-responsive-screen';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { RootStackParamList } from '../types/navigation';
 import { useTheme } from '../ThemeContext';
 
@@ -29,19 +30,18 @@ type FollowingFollowersRouteProp = RouteProp<
 
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
-const MASTER_KEY = 'myMasterKey';
-const HEADERS = {
-  'X-Parse-Application-Id': APP_ID,
-  'X-Parse-Master-Key': MASTER_KEY,
-  'Content-Type': 'application/json',
-};
 
-async function fetchFollowers(userAuth0Id: string): Promise<any[]> {
+async function fetchFollowers(userAuth0Id: string, sessionToken: string | null): Promise<any[]> {
   const where = { followingId: userAuth0Id };
   const whereStr = encodeURIComponent(JSON.stringify(where));
+  const headers = {
+    'X-Parse-Application-Id': APP_ID,
+    ...(sessionToken && { 'X-Parse-Session-Token': sessionToken }),
+    'Content-Type': 'application/json',
+  };
   const res = await fetch(`${API_URL}/classes/Follow?where=${whereStr}`, {
     method: 'GET',
-    headers: HEADERS,
+    headers,
   });
   if (!res.ok) return [];
   const data = await res.json();
@@ -52,19 +52,24 @@ async function fetchFollowers(userAuth0Id: string): Promise<any[]> {
   const usersWhereStr = encodeURIComponent(JSON.stringify(usersWhere));
   const usersRes = await fetch(`${API_URL}/classes/UserProfile?where=${usersWhereStr}`, {
     method: 'GET',
-    headers: HEADERS,
+    headers,
   });
   if (!usersRes.ok) return [];
   const usersData = await usersRes.json();
   return usersData.results || [];
 }
 
-async function fetchFollowing(userAuth0Id: string): Promise<any[]> {
+async function fetchFollowing(userAuth0Id: string, sessionToken: string | null): Promise<any[]> {
   const where = { followerId: userAuth0Id };
   const whereStr = encodeURIComponent(JSON.stringify(where));
+  const headers = {
+    'X-Parse-Application-Id': APP_ID,
+    ...(sessionToken && { 'X-Parse-Session-Token': sessionToken }),
+    'Content-Type': 'application/json',
+  };
   const res = await fetch(`${API_URL}/classes/Follow?where=${whereStr}`, {
     method: 'GET',
-    headers: HEADERS,
+    headers,
   });
   if (!res.ok) return [];
   const data = await res.json();
@@ -75,7 +80,7 @@ async function fetchFollowing(userAuth0Id: string): Promise<any[]> {
   const usersWhereStr = encodeURIComponent(JSON.stringify(usersWhere));
   const usersRes = await fetch(`${API_URL}/classes/UserProfile?where=${usersWhereStr}`, {
     method: 'GET',
-    headers: HEADERS,
+    headers,
   });
   if (!usersRes.ok) return [];
   const usersData = await usersRes.json();
@@ -88,9 +93,24 @@ export default function FollowingFollowersScreen() {
   const { userAuth0Id, type } = route.params;
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const title = type === 'followers' ? 'Followers' : 'Following';
+
+  useEffect(() => {
+    const loadSessionToken = async () => {
+      try {
+        const token = await AsyncStorage.getItem('parseSessionToken');
+        setSessionToken(token);
+      } catch (err) {
+        console.error('Failed to load session token:', err);
+        setSessionToken(null);
+      }
+    };
+
+    loadSessionToken();
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -98,9 +118,9 @@ export default function FollowingFollowersScreen() {
         setLoading(true);
         let data: any[] = [];
         if (type === 'followers') {
-          data = await fetchFollowers(userAuth0Id);
+          data = await fetchFollowers(userAuth0Id, sessionToken);
         } else {
-          data = await fetchFollowing(userAuth0Id);
+          data = await fetchFollowing(userAuth0Id, sessionToken);
         }
         setUsers(data);
       } catch (err) {
@@ -110,8 +130,10 @@ export default function FollowingFollowersScreen() {
       }
     };
 
-    fetchData();
-  }, [userAuth0Id, type]);
+    if (sessionToken !== null) {
+      fetchData();
+    }
+  }, [userAuth0Id, type, sessionToken]);
 
   const renderItem = ({ item }: { item: any }) => (
     <TouchableOpacity

@@ -1,5 +1,5 @@
 // rooms/ReportScreen.tsx — Reusable Report Modal Component (Updated)
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,10 +14,10 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
 import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-native-responsive-screen';
 import { useTheme } from '../ThemeContext'; // Adjust path as needed
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
-const MASTER_KEY = 'myMasterKey';
 
 interface Post {
   objectId: string;
@@ -61,6 +61,7 @@ const ReportScreen: React.FC<ReportScreenProps> = ({
   const { colors } = useTheme();
   const [selectedReason, setSelectedReason] = useState<string>('');
   const [customReason, setCustomReason] = useState<string>('');
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
 
   const reasons = [
     { id: 'spam', label: 'Spam' },
@@ -68,6 +69,20 @@ const ReportScreen: React.FC<ReportScreenProps> = ({
     { id: 'harassment', label: 'Harassment' },
     { id: 'other', label: 'Other' },
   ];
+
+  useEffect(() => {
+    const loadSessionToken = async () => {
+      try {
+        const token = await AsyncStorage.getItem('parseSessionToken');
+        setSessionToken(token);
+      } catch (err) {
+        console.error('Failed to load session token:', err);
+        setSessionToken(null);
+      }
+    };
+
+    loadSessionToken();
+  }, []);
 
   const submitReport = async () => {
     let finalReason = selectedReason;
@@ -106,7 +121,7 @@ const ReportScreen: React.FC<ReportScreenProps> = ({
       const checkRes = await fetch(checkUrl, {
         headers: {
           'X-Parse-Application-Id': APP_ID,
-          'X-Parse-Master-Key': MASTER_KEY,
+          'X-Parse-Session-Token': sessionToken!,
         },
       });
 
@@ -156,7 +171,7 @@ const ReportScreen: React.FC<ReportScreenProps> = ({
         method: 'POST',
         headers: {
           'X-Parse-Application-Id': APP_ID,
-          'X-Parse-Master-Key': MASTER_KEY,
+          'X-Parse-Session-Token': sessionToken!,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload),

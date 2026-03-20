@@ -23,7 +23,6 @@ const { LocationModule } = NativeModules;
 
 const API_URL = 'https://nexi-server.onrender.com/parse';
 const APP_ID = 'myAppId';
-const MASTER_KEY = 'myMasterKey';
 
 interface LocationToggleProps {
   enabled: boolean;
@@ -34,9 +33,25 @@ export default function LocationToggle({ enabled, onToggle }: LocationToggleProp
   const [isLoadingToggle, setIsLoadingToggle] = useState(false);
   const [hasAllPermissions, setHasAllPermissions] = useState(false);
   const [isSystemLocationEnabled, setIsSystemLocationEnabled] = useState<boolean | null>(null);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
 
   const appState = useRef(AppState.currentState);
   const gpsWatcherRef = useRef<any>(null);
+
+  // Load sessionToken
+  useEffect(() => {
+    const loadSessionToken = async () => {
+      try {
+        const token = await AsyncStorage.getItem('parseSessionToken');
+        setSessionToken(token);
+      } catch (err) {
+        console.error('Failed to load session token:', err);
+        setSessionToken(null);
+      }
+    };
+
+    loadSessionToken();
+  }, []);
 
   // ──────────────────────────────────────────────────────────────
   // 1. Helper: safe API level
@@ -174,7 +189,7 @@ export default function LocationToggle({ enabled, onToggle }: LocationToggleProp
           headers: {
             'Content-Type': 'application/json',
             'X-Parse-Application-Id': APP_ID,
-            'X-Parse-Master-Key': MASTER_KEY,
+            'X-Parse-Session-Token': sessionToken!,
           },
           body: JSON.stringify({ isOnline: false }),
         });
@@ -225,14 +240,14 @@ export default function LocationToggle({ enabled, onToggle }: LocationToggleProp
         return false;
       }
 
-      await LocationModule.startLocationSharing(objectId, API_URL, APP_ID, MASTER_KEY);
+      await LocationModule.startLocationSharing(objectId, API_URL, APP_ID, sessionToken!);
 
       await fetch(`${API_URL}/classes/UserProfile/${objectId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'X-Parse-Application-Id': APP_ID,
-          'X-Parse-Master-Key': MASTER_KEY,
+          'X-Parse-Session-Token': sessionToken!,
         },
         body: JSON.stringify({ isOnline: true }),
       });
@@ -266,7 +281,8 @@ export default function LocationToggle({ enabled, onToggle }: LocationToggleProp
     if (!hasAllPermissions) {
       Alert.alert(
         'Permission Required',
-        'Please allow "Allow all the time" in app settings.',
+        'Please click on "Allow all the time" in app Settings(nexi) > Location > choose "Allow all the time"',
+        
         [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Open Settings', onPress: () => Linking.openSettings() },
@@ -317,7 +333,7 @@ export default function LocationToggle({ enabled, onToggle }: LocationToggleProp
       </Text>
       <View style={styles.switchRow}>
         <Switch
-          trackColor={{ false: '#555', true: '#00C853' }}
+          trackColor={{ false: '#555', true: '#5170ff' }}
           thumbColor={enabled ? '#fff' : '#aaa'}
           ios_backgroundColor="#555"
           onValueChange={handleToggle}

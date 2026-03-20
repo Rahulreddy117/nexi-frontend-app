@@ -17,6 +17,7 @@ import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-nat
 import type { RootStackParamList } from '../types/navigation';
 import { useTheme } from '../ThemeContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type JoinedRoomsRouteProp = RouteProp<RootStackParamList, 'JoinedRooms'>;
 type NavigationProp = any;
@@ -36,17 +37,31 @@ export default function JoinedRoomsScreen() {
   const [joinedRooms, setJoinedRooms] = useState<JoinedRoom[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
 
   const API_URL = 'https://nexi-server.onrender.com/parse';
   const APP_ID = 'myAppId';
-  const MASTER_KEY = 'myMasterKey';
+
+  useEffect(() => {
+    const loadSessionToken = async () => {
+      const token = await AsyncStorage.getItem('parseSessionToken');
+      setSessionToken(token);
+    };
+    loadSessionToken();
+  }, []);
+
   const HEADERS = {
     'X-Parse-Application-Id': APP_ID,
-    'X-Parse-Master-Key': MASTER_KEY,
+    'X-Parse-Session-Token': sessionToken || '',
     'Content-Type': 'application/json',
   };
 
   const fetchJoinedRooms = async () => {
+    if (!sessionToken) {
+      setLoading(false);
+      return;
+    }
+
     try {
       const where = {
         user: {
@@ -77,8 +92,10 @@ export default function JoinedRoomsScreen() {
   };
 
   useEffect(() => {
-    fetchJoinedRooms();
-  }, [userParseObjectId]);
+    if (sessionToken) {
+      fetchJoinedRooms();
+    }
+  }, [userParseObjectId, sessionToken]);
 
   const onRefresh = async () => {
     setRefreshing(true);
